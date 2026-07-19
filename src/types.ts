@@ -1,3 +1,5 @@
+export type Language = 'zh-CN' | 'en-US'
+
 export interface MatchResult {
   episodeId: number
   animeId: number
@@ -32,6 +34,7 @@ export interface DanmakuComment {
 }
 
 export interface PlayerSettings {
+  language: Language
   danmakuEnabled: boolean
   opacity: number
   fontSize: number

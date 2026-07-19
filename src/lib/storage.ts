@@ -6,6 +6,7 @@ const DB_NAME = 'local-danmu-player'
 const COMMENTS_STORE = 'comments'
 
 export const defaultSettings: PlayerSettings = {
+  language: 'zh-CN',
   danmakuEnabled: true,
   opacity: 0.9,
   fontSize: 24,
@@ -15,7 +16,8 @@ export const defaultSettings: PlayerSettings = {
 
 export function loadSettings(): PlayerSettings {
   try {
-    return { ...defaultSettings, ...JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}') }
+    const stored = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}') as Partial<PlayerSettings>
+    return { ...defaultSettings, ...stored, language: stored.language === 'en-US' ? 'en-US' : 'zh-CN' }
   } catch {
     return { ...defaultSettings }
   }
