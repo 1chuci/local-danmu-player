@@ -4,35 +4,254 @@ import SparkMD5 from 'spark-md5'
 import DanmakuOverlay from './components/DanmakuOverlay.vue'
 import { getComments, getConfig, matchVideo, searchEpisodes } from './lib/api'
 import { demoComments, parseComments } from './lib/danmaku'
+import { languageOptions, translate } from './lib/i18n'
 import { cacheComments, getCachedComments, getRecord, loadSettings, saveRecord, saveSettings } from './lib/storage'
 import type { DanmakuComment, MatchResult, PlaybackRecord, SearchAnime } from './types'
 
-const video=ref<HTMLVideoElement>(), input=ref<HTMLInputElement>(), file=ref<File>(), url=ref(''), fileKey=ref(''), hash=ref('')
-const duration=ref(0), currentTime=ref(0), playing=ref(false), loading=ref(false), commentsLoading=ref(false), configured=ref(false)
-const notice=ref(''), error=ref(''), matches=ref<MatchResult[]>([]), selected=ref<MatchResult>(), comments=ref<DanmakuComment[]>([])
-const keyword=ref(''), searchResults=ref<SearchAnime[]>([]), showSearch=ref(false), showSettings=ref(false), settings=reactive(loadSettings())
-let timer:number|undefined
-const demoMode=computed(()=>!configured.value), title=computed(()=>selected.value?`${selected.value.animeTitle} - ${selected.value.episodeTitle||'Episode'}`:file.value?.name||'No video selected'), progress=computed(()=>duration.value?currentTime.value/duration.value*100:0)
-const time=(v:number)=>{const s=Math.max(0,Math.floor(v||0));return `${String(Math.floor(s/3600)).padStart(2,'0')}:${String(Math.floor(s%3600/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`}
-const toast=(v:string)=>{notice.value=v;clearTimeout(timer);timer=window.setTimeout(()=>notice.value='',4500)}
-async function hashFile(f:File){return SparkMD5.ArrayBuffer.hash(await f.slice(0,16*1024*1024).arrayBuffer())}
-async function choose(f?:File){if(!f||(!f.type.startsWith('video/')&&!/\.(mkv|mp4|webm|avi|mov|m4v|ts)$/i.test(f.name))){error.value='Please choose a video file';return} error.value='';if(url.value)URL.revokeObjectURL(url.value);file.value=f;url.value=URL.createObjectURL(f);fileKey.value=`${f.name}:${f.size}:${f.lastModified}`;hash.value='';duration.value=0;currentTime.value=0;matches.value=[];selected.value=undefined;comments.value=demoMode.value?[...demoComments]:[];await nextTick();video.value?.load()}
-async function metadata(){duration.value=video.value?.duration||0;const r=fileKey.value?getRecord(fileKey.value):undefined;if(r&&r.currentTime>5&&r.currentTime<duration.value-5&&video.value){video.value.currentTime=r.currentTime;currentTime.value=r.currentTime;toast(`Resumed at ${time(r.currentTime)}`)}if(file.value&&!hash.value){loading.value=true;try{hash.value=await hashFile(file.value);if(configured.value)await identify();else toast('Demo mode: configure AppId for live matching')}catch(e){error.value=e instanceof Error?e.message:'Identification failed'}finally{loading.value=false}}}
-async function identify(){if(!file.value||!hash.value)return;const r=await matchVideo({fileName:file.value.name,fileHash:hash.value,fileSize:file.value.size,videoDuration:duration.value});matches.value=r.matches||[];if(r.isMatched&&matches.value.length===1){await select(matches.value[0]);toast('Exact match found')}else toast(matches.value.length?`${matches.value.length} possible matches found`:'No match; try manual search')}
-async function select(m?:MatchResult){if(!m)return;selected.value=m;await loadComments(m.episodeId);if(fileKey.value)saveRecord({key:fileKey.value,fileName:file.value?.name||'',fileSize:file.value?.size||0,currentTime:currentTime.value,duration:duration.value,episodeId:m.episodeId,animeTitle:m.animeTitle,episodeTitle:m.episodeTitle,updatedAt:Date.now()})}
-async function loadComments(id:number){commentsLoading.value=true;try{const c=await getCachedComments(id).catch(()=>undefined);if(c&&Date.now()-c.cachedAt<21600000){comments.value=c.comments;toast(`Loaded ${comments.value.length} cached comments`);return}const r=await getComments(id);comments.value=parseComments(r.comments||[]);await cacheComments(id,comments.value);toast(`Loaded ${comments.value.length} comments`)}catch(e){error.value=e instanceof Error?e.message:'Danmaku loading failed'}finally{commentsLoading.value=false}}
-async function search(){if(keyword.value.trim().length<2){error.value='Search needs at least 2 characters';return}loading.value=true;try{searchResults.value=(await searchEpisodes(keyword.value.trim())).animes||[]}catch(e){error.value=e instanceof Error?e.message:'Search failed'}finally{loading.value=false}}
-async function chooseEpisode(a:SearchAnime,e:SearchAnime['episodes'][number]){await select({episodeId:e.episodeId,animeId:a.animeId,animeTitle:a.animeTitle,episodeTitle:e.episodeTitle,shift:0});showSearch.value=false}
-function toggle(){if(!video.value||!file.value)return;video.value.paused?video.value.play().catch(()=>{}):video.value.pause()}
-function seek(e:MouseEvent){if(!video.value||!duration.value)return;const t=e.currentTarget as HTMLElement;video.value.currentTime=Math.max(0,Math.min(1,(e.clientX-t.getBoundingClientRect().left)/t.clientWidth))*duration.value}
-function skip(){if(video.value){video.value.currentTime=Math.min(duration.value,video.value.currentTime+settings.skipSeconds);toast(`Skipped ${settings.skipSeconds} seconds`)}}
-function update(){currentTime.value=video.value?.currentTime||0;if(fileKey.value&&file.value)saveRecord({key:fileKey.value,fileName:file.value.name,fileSize:file.value.size,currentTime:currentTime.value,duration:duration.value,episodeId:selected.value?.episodeId,animeTitle:selected.value?.animeTitle,episodeTitle:selected.value?.episodeTitle,updatedAt:Date.now()})}
-function drop(e:DragEvent){e.preventDefault();choose(e.dataTransfer?.files?.[0])} function save(){saveSettings(settings);showSettings.value=false;toast('Settings saved locally')}
-onMounted(async()=>{try{configured.value=(await getConfig()).dandanplayConfigured}catch{configured.value=false}});onBeforeUnmount(()=>{if(url.value)URL.revokeObjectURL(url.value);clearTimeout(timer)})
+const video = ref<HTMLVideoElement>()
+const input = ref<HTMLInputElement>()
+const file = ref<File>()
+const url = ref('')
+const fileKey = ref('')
+const hash = ref('')
+const duration = ref(0)
+const currentTime = ref(0)
+const playing = ref(false)
+const loading = ref(false)
+const commentsLoading = ref(false)
+const configured = ref(false)
+const notice = ref('')
+const error = ref('')
+const matches = ref<MatchResult[]>([])
+const selected = ref<MatchResult>()
+const comments = ref<DanmakuComment[]>([])
+const keyword = ref('')
+const searchResults = ref<SearchAnime[]>([])
+const showSearch = ref(false)
+const showSettings = ref(false)
+const settings = reactive(loadSettings())
+let timer: number | undefined
+
+const language = computed(() => settings.language)
+const t = (key: string, params: Record<string, string | number> = {}) => translate(language.value, key, params)
+const demoMode = computed(() => !configured.value)
+const title = computed(() => selected.value
+  ? `${selected.value.animeTitle} - ${selected.value.episodeTitle || t('episode', { number: '?' })}`
+  : file.value?.name || t('noVideoSelected'))
+const progress = computed(() => duration.value ? currentTime.value / duration.value * 100 : 0)
+const time = (value: number) => {
+  const seconds = Math.max(0, Math.floor(value || 0))
+  return `${String(Math.floor(seconds / 3600)).padStart(2, '0')}:${String(Math.floor(seconds % 3600 / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`
+}
+const toast = (message: string) => {
+  notice.value = message
+  clearTimeout(timer)
+  timer = window.setTimeout(() => notice.value = '', 4500)
+}
+const applyLanguage = () => {
+  document.documentElement.lang = language.value
+  saveSettings(settings)
+}
+
+async function hashFile(videoFile: File) {
+  return SparkMD5.ArrayBuffer.hash(await videoFile.slice(0, 16 * 1024 * 1024).arrayBuffer())
+}
+
+async function choose(videoFile?: File) {
+  if (!videoFile || (!videoFile.type.startsWith('video/') && !/\.(mkv|mp4|webm|avi|mov|m4v|ts)$/i.test(videoFile.name))) {
+    error.value = t('chooseVideoError')
+    return
+  }
+  error.value = ''
+  if (url.value) URL.revokeObjectURL(url.value)
+  file.value = videoFile
+  url.value = URL.createObjectURL(videoFile)
+  fileKey.value = `${videoFile.name}:${videoFile.size}:${videoFile.lastModified}`
+  hash.value = ''
+  duration.value = 0
+  currentTime.value = 0
+  matches.value = []
+  selected.value = undefined
+  comments.value = demoMode.value ? [...demoComments] : []
+  await nextTick()
+  video.value?.load()
+}
+
+async function metadata() {
+  duration.value = video.value?.duration || 0
+  const record = fileKey.value ? getRecord(fileKey.value) : undefined
+  if (record && record.currentTime > 5 && record.currentTime < duration.value - 5 && video.value) {
+    video.value.currentTime = record.currentTime
+    currentTime.value = record.currentTime
+    toast(t('resumedAt', { time: time(record.currentTime) }))
+  }
+  if (file.value && !hash.value) {
+    loading.value = true
+    try {
+      hash.value = await hashFile(file.value)
+      if (configured.value) await identify()
+      else toast(t('configureForLive'))
+    } catch (exception) {
+      error.value = exception instanceof Error ? exception.message : t('identificationFailed')
+    } finally {
+      loading.value = false
+    }
+  }
+}
+
+async function identify() {
+  if (!file.value || !hash.value) return
+  const result = await matchVideo({ fileName: file.value.name, fileHash: hash.value, fileSize: file.value.size, videoDuration: duration.value })
+  matches.value = result.matches || []
+  if (result.isMatched && matches.value.length === 1) {
+    await select(matches.value[0])
+    toast(t('exactMatchFound'))
+  } else {
+    toast(matches.value.length ? t('possibleMatches', { count: matches.value.length }) : t('noMatch'))
+  }
+}
+
+async function select(match?: MatchResult) {
+  if (!match) return
+  selected.value = match
+  await loadComments(match.episodeId)
+  if (fileKey.value) {
+    saveRecord({ key: fileKey.value, fileName: file.value?.name || '', fileSize: file.value?.size || 0, currentTime: currentTime.value, duration: duration.value, episodeId: match.episodeId, animeTitle: match.animeTitle, episodeTitle: match.episodeTitle, updatedAt: Date.now() })
+  }
+}
+
+async function loadComments(episodeId: number) {
+  commentsLoading.value = true
+  try {
+    const cached = await getCachedComments(episodeId).catch(() => undefined)
+    if (cached && Date.now() - cached.cachedAt < 21600000) {
+      comments.value = cached.comments
+      toast(t('cachedComments', { count: comments.value.length }))
+      return
+    }
+    const result = await getComments(episodeId)
+    comments.value = parseComments(result.comments || [])
+    await cacheComments(episodeId, comments.value)
+    toast(t('loadedComments', { count: comments.value.length }))
+  } catch (exception) {
+    error.value = exception instanceof Error ? exception.message : t('danmakuLoadingFailed')
+  } finally {
+    commentsLoading.value = false
+  }
+}
+
+async function search() {
+  if (keyword.value.trim().length < 2) {
+    error.value = t('searchMin')
+    return
+  }
+  loading.value = true
+  try {
+    searchResults.value = (await searchEpisodes(keyword.value.trim())).animes || []
+  } catch (exception) {
+    error.value = exception instanceof Error ? exception.message : t('searchFailed')
+  } finally {
+    loading.value = false
+  }
+}
+
+async function chooseEpisode(anime: SearchAnime, episode: SearchAnime['episodes'][number]) {
+  await select({ episodeId: episode.episodeId, animeId: anime.animeId, animeTitle: anime.animeTitle, episodeTitle: episode.episodeTitle, shift: 0 })
+  showSearch.value = false
+}
+
+function toggle() {
+  if (!video.value || !file.value) return
+  video.value.paused ? video.value.play().catch(() => {}) : video.value.pause()
+}
+
+function seek(event: MouseEvent) {
+  if (!video.value || !duration.value) return
+  const track = event.currentTarget as HTMLElement
+  video.value.currentTime = Math.max(0, Math.min(1, (event.clientX - track.getBoundingClientRect().left) / track.clientWidth)) * duration.value
+}
+
+function skip() {
+  if (video.value) {
+    video.value.currentTime = Math.min(duration.value, video.value.currentTime + settings.skipSeconds)
+    toast(t('skipped', { count: settings.skipSeconds }))
+  }
+}
+
+function update() {
+  currentTime.value = video.value?.currentTime || 0
+  if (fileKey.value && file.value) {
+    saveRecord({ key: fileKey.value, fileName: file.value.name, fileSize: file.value.size, currentTime: currentTime.value, duration: duration.value, episodeId: selected.value?.episodeId, animeTitle: selected.value?.animeTitle, episodeTitle: selected.value?.episodeTitle, updatedAt: Date.now() })
+  }
+}
+
+function drop(event: DragEvent) {
+  event.preventDefault()
+  choose(event.dataTransfer?.files?.[0])
+}
+
+function save() {
+  saveSettings(settings)
+  showSettings.value = false
+  applyLanguage()
+  toast(t('settingsSaved'))
+}
+
+onMounted(async () => {
+  applyLanguage()
+  try {
+    configured.value = (await getConfig()).dandanplayConfigured
+  } catch {
+    configured.value = false
+  }
+})
+
+onBeforeUnmount(() => {
+  if (url.value) URL.revokeObjectURL(url.value)
+  clearTimeout(timer)
+})
 </script>
+
 <template>
-<main class="app" @dragover.prevent @drop="drop"><header><div class="brand"><b>弹</b><span>LOCAL DANMU PLAYER<small>LOCAL VIDEO / LOCAL DATA</small></span></div><div><i :class="{live:!demoMode}">{{demoMode?'DEMO MODE':'API CONNECTED'}}</i><button @click="showSettings=true">⚙</button></div></header>
-<section class="layout"><div class="player"><div v-if="!file" class="drop" @click="input?.click()"><strong>▶</strong><h1>Open a local video</h1><p>Drop a video here or choose a file</p><small>The video is read locally and never uploaded</small><button class="primary" @click.stop="input?.click()">Choose video</button></div><div v-else class="frame"><video ref="video" :src="url" @loadedmetadata="metadata" @timeupdate="update" @play="playing=true" @pause="playing=false" @ended="playing=false" @click="toggle"/><DanmakuOverlay :comments="comments" :current-time="currentTime" :playing="playing" :enabled="settings.danmakuEnabled" :opacity="settings.opacity" :font-size="settings.fontSize" :speed="settings.speed"/><button v-if="!playing&&!currentTime" class="bigplay" @click="toggle">▶</button><div class="controls"><div class="track" @click="seek"><span :style="{width:`${progress}%`}"/></div><div><button @click="toggle">{{playing?'Ⅱ':'▶'}}</button><em>{{time(currentTime)}} / {{time(duration)}}</em><button class="skip" @click="skip">+ {{settings.skipSeconds}} sec</button><button @click="settings.danmakuEnabled=!settings.danmakuEnabled">{{settings.danmakuEnabled?'DM':'DM off'}}</button><button @click="showSettings=true">⚙</button></div></div></div><div class="now"><div><small>NOW PLAYING</small><h2>{{title}}</h2></div><button @click="input?.click()">Change video</button></div><input ref="input" hidden type="file" accept="video/*,.mkv,.avi,.mov,.m4v,.ts" @change="choose(($event.target as HTMLInputElement).files?.[0])"/></div>
-<aside><div class="card status"><b><span :class="{active:!demoMode}"/> {{demoMode?'Credentials required':'Danmaku service ready'}}</b><p>{{demoMode?'Demo comments are shown now. Configure AppId and AppSecret on the server after approval.':'Connected through a secure server-side proxy.'}}</p></div><div class="card"><h3>Match result <small v-if="loading">Working...</small></h3><div v-if="matches.length" class="list"><button v-for="m in matches" :key="m.episodeId" :class="{selected:selected?.episodeId===m.episodeId}" @click="select(m)"><b>{{m.animeTitle}}</b><small>{{m.episodeTitle||'Episode'}}</small></button></div><p v-else class="muted">The file name and first 16 MiB hash are used for matching.</p><button class="outline full" @click="showSearch=!showSearch">Manual search</button></div><div v-if="showSearch" class="card"><div class="search"><input v-model="keyword" placeholder="Anime title" @keyup.enter="search"/><button class="primary" @click="search">Search</button></div><div v-for="a in searchResults" :key="a.animeId" class="result"><b>{{a.animeTitle}}</b><button v-for="e in a.episodes" :key="e.episodeId" @click="chooseEpisode(a,e)">{{e.episodeTitle||'Select'}}</button></div></div><div class="card info"><h3>Local data</h3><p><span>Danmaku</span><b>{{commentsLoading?'Loading...':`${comments.length} comments`}}</b></p><p><span>Video processing</span><b>Local</b></p><p><span>Playback history</span><b>Browser storage</b></p></div></aside></section><footer>LOCAL VIDEO · LOCAL PROCESSING · LOCAL CACHE</footer><div v-if="notice" class="toast">{{notice}}</div><div v-if="error" class="toast err">{{error}} <button @click="error=''">×</button></div>
-<div v-if="showSettings" class="backdrop" @click.self="showSettings=false"><section class="modal"><h2>Player settings <button @click="showSettings=false">×</button></h2><label><input v-model="settings.danmakuEnabled" type="checkbox"/> Show danmaku</label><label>Opacity <output>{{Math.round(settings.opacity*100)}}%</output><input v-model.number="settings.opacity" type="range" min=".2" max="1" step=".05"/></label><label>Font size <output>{{settings.fontSize}}px</output><input v-model.number="settings.fontSize" type="range" min="16" max="42"/></label><label>Skip seconds <output>{{settings.skipSeconds}} sec</output><input v-model.number="settings.skipSeconds" type="number" min="0" max="600" step="5"/></label><button class="primary full" @click="save">Save settings</button></section></div></main>
+  <main class="app" @dragover.prevent @drop="drop">
+    <header>
+      <div class="brand"><b>弹</b><span>{{ t('localDanmuPlayer') }}<small>{{ t('localVideoLocalData') }}</small></span></div>
+      <div class="header-actions">
+        <i :class="{ live: !demoMode }">{{ demoMode ? t('demoMode') : t('apiConnected') }}</i>
+        <select v-model="settings.language" class="language-select" :aria-label="t('language')" @change="applyLanguage">
+          <option v-for="option in languageOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
+        </select>
+        <button :aria-label="t('playerSettings')" @click="showSettings = true">⚙</button>
+      </div>
+    </header>
+
+    <section class="layout">
+      <div class="player">
+        <div v-if="!file" class="drop" @click="input?.click()">
+          <strong>▶</strong><h1>{{ t('openLocalVideo') }}</h1><p>{{ t('dropVideoHere') }}</p><small>{{ t('videoReadLocally') }}</small>
+          <button class="primary" @click.stop="input?.click()">{{ t('chooseVideo') }}</button>
+        </div>
+        <div v-else class="frame">
+          <video ref="video" :src="url" @loadedmetadata="metadata" @timeupdate="update" @play="playing = true" @pause="playing = false" @ended="playing = false" @click="toggle" />
+          <DanmakuOverlay :comments="comments" :current-time="currentTime" :playing="playing" :enabled="settings.danmakuEnabled" :opacity="settings.opacity" :font-size="settings.fontSize" :speed="settings.speed" />
+          <button v-if="!playing && !currentTime" class="bigplay" @click="toggle">▶</button>
+          <div class="controls"><div class="track" @click="seek"><span :style="{ width: `${progress}%` }" /></div><div><button :aria-label="playing ? t('pause') : t('play')" @click="toggle">{{ playing ? 'Ⅱ' : '▶' }}</button><em>{{ time(currentTime) }} / {{ time(duration) }}</em><button class="skip" @click="skip">+ {{ settings.skipSeconds }} {{ t('secondsShort') }}</button><button @click="settings.danmakuEnabled = !settings.danmakuEnabled">{{ settings.danmakuEnabled ? t('danmakuShort') : t('danmakuOff') }}</button><button :aria-label="t('playerSettings')" @click="showSettings = true">⚙</button></div></div>
+        </div>
+        <div class="now"><div><small>{{ t('nowPlaying') }}</small><h2>{{ title }}</h2></div><button @click="input?.click()">{{ t('changeVideo') }}</button></div>
+        <input ref="input" hidden type="file" accept="video/*,.mkv,.avi,.mov,.m4v,.ts" @change="choose(($event.target as HTMLInputElement).files?.[0])" />
+      </div>
+
+      <aside>
+        <div class="card status"><b><span :class="{ active: !demoMode }" /> {{ demoMode ? t('credentialsRequired') : t('danmakuServiceReady') }}</b><p>{{ demoMode ? t('demoCommentsShown') : t('secureProxy') }}</p></div>
+        <div class="card"><h3>{{ t('matchResult') }} <small v-if="loading">{{ t('working') }}</small></h3><div v-if="matches.length" class="list"><button v-for="match in matches" :key="match.episodeId" :class="{ selected: selected?.episodeId === match.episodeId }" @click="select(match)"><b>{{ match.animeTitle }}</b><small>{{ match.episodeTitle || t('episode', { number: '?' }) }}</small></button></div><p v-else class="muted">{{ t('matchingHint') }}</p><button class="outline full" @click="showSearch = !showSearch">{{ t('manualSearch') }}</button></div>
+        <div v-if="showSearch" class="card"><div class="search"><input v-model="keyword" :placeholder="t('animeTitle')" @keyup.enter="search" /><button class="primary" @click="search">{{ t('search') }}</button></div><div v-for="anime in searchResults" :key="anime.animeId" class="result"><b>{{ anime.animeTitle }}</b><button v-for="episode in anime.episodes" :key="episode.episodeId" @click="chooseEpisode(anime, episode)">{{ episode.episodeTitle || t('select') }}</button></div></div>
+        <div class="card info"><h3>{{ t('localData') }}</h3><p><span>{{ t('danmaku') }}</span><b>{{ commentsLoading ? t('loading') : t('comments', { count: comments.length }) }}</b></p><p><span>{{ t('videoProcessing') }}</span><b>{{ t('local') }}</b></p><p><span>{{ t('playbackHistory') }}</span><b>{{ t('browserStorage') }}</b></p></div>
+      </aside>
+    </section>
+
+    <footer>{{ t('localVideo') }} · {{ t('localProcessing') }} · {{ t('localCache') }}</footer>
+    <div v-if="notice" class="toast">{{ notice }}</div>
+    <div v-if="error" class="toast err">{{ error }} <button @click="error = ''">×</button></div>
+    <div v-if="showSettings" class="backdrop" @click.self="showSettings = false"><section class="modal"><h2>{{ t('playerSettings') }} <button @click="showSettings = false">×</button></h2><label>{{ t('language') }}<select v-model="settings.language" class="settings-select" @change="applyLanguage"><option v-for="option in languageOptions" :key="option.value" :value="option.value">{{ option.label }}</option></select></label><label><input v-model="settings.danmakuEnabled" type="checkbox" /> {{ t('showDanmaku') }}</label><label>{{ t('opacity') }} <output>{{ Math.round(settings.opacity * 100) }}%</output><input v-model.number="settings.opacity" type="range" min=".2" max="1" step=".05" /></label><label>{{ t('fontSize') }} <output>{{ settings.fontSize }}px</output><input v-model.number="settings.fontSize" type="range" min="16" max="42" /></label><label>{{ t('skipSeconds') }} <output>{{ settings.skipSeconds }} {{ t('secondsShort') }}</output><input v-model.number="settings.skipSeconds" type="number" min="0" max="600" step="5" /></label><button class="primary full" @click="save">{{ t('saveSettings') }}</button></section></div>
+  </main>
 </template>
