@@ -32,7 +32,9 @@ const showSearch = ref(false)
 const showSettings = ref(false)
 const webFullscreen = ref(false)
 const nativeFullscreen = ref(false)
+const seeking = ref(false)
 const settings = reactive(loadSettings())
+let activePointerId: number | undefined
 let timer: number | undefined
 
 const language = computed(() => settings.language)
@@ -189,10 +191,36 @@ function toggle() {
   video.value.paused ? video.value.play().catch(() => {}) : video.value.pause()
 }
 
+function seekAt(clientX: number, track: HTMLElement) {
+  if (!video.value || !duration.value) return
+  video.value.currentTime = Math.max(0, Math.min(1, (clientX - track.getBoundingClientRect().left) / track.clientWidth)) * duration.value
+}
+
 function seek(event: MouseEvent) {
+  seekAt(event.clientX, event.currentTarget as HTMLElement)
+}
+
+function startSeek(event: PointerEvent) {
   if (!video.value || !duration.value) return
   const track = event.currentTarget as HTMLElement
-  video.value.currentTime = Math.max(0, Math.min(1, (event.clientX - track.getBoundingClientRect().left) / track.clientWidth)) * duration.value
+  activePointerId = event.pointerId
+  seeking.value = true
+  track.setPointerCapture(event.pointerId)
+  seekAt(event.clientX, track)
+  event.preventDefault()
+}
+
+function moveSeek(event: PointerEvent) {
+  if (!seeking.value || event.pointerId !== activePointerId) return
+  seekAt(event.clientX, event.currentTarget as HTMLElement)
+}
+
+function endSeek(event: PointerEvent) {
+  if (!seeking.value || event.pointerId !== activePointerId) return
+  const track = event.currentTarget as HTMLElement
+  seeking.value = false
+  activePointerId = undefined
+  if (track.hasPointerCapture(event.pointerId)) track.releasePointerCapture(event.pointerId)
 }
 
 function skip() {
@@ -329,7 +357,7 @@ onBeforeUnmount(() => {
           <video ref="video" :src="url" @loadedmetadata="metadata" @timeupdate="update" @play="playing = true" @pause="playing = false" @ended="playing = false" @click="toggle" />
           <DanmakuOverlay :comments="comments" :current-time="currentTime" :playing="playing" :enabled="settings.danmakuEnabled" :opacity="settings.opacity" :font-size="settings.fontSize" :speed="settings.speed" />
           <button v-if="!playing && !currentTime" class="bigplay" @click="toggle">▶</button>
-          <div class="controls"><div class="track" @click="seek"><span :style="{ width: `${progress}%` }" /></div><div><button :aria-label="playing ? t('pause') : t('play')" @click="toggle">{{ playing ? 'Ⅱ' : '▶' }}</button><em>{{ time(currentTime) }} / {{ time(duration) }}</em><button class="skip" @click="skip">+ {{ settings.skipSeconds }} {{ t('secondsShort') }}</button><button @click="settings.danmakuEnabled = !settings.danmakuEnabled">{{ settings.danmakuEnabled ? t('danmakuShort') : t('danmakuOff') }}</button><button class="screen-button" :title="webFullscreen ? t('exitWebFullscreen') : t('webFullscreen')" @click="toggleWebFullscreen">{{ webFullscreen ? t('exitWebFullscreen') : t('webFullscreen') }}</button><button class="screen-button" :title="nativeFullscreen ? t('exitFullscreen') : t('fullscreen')" @click="toggleNativeFullscreen">{{ nativeFullscreen ? t('exitFullscreen') : t('fullscreen') }}</button><button :aria-label="t('playerSettings')" @click="showSettings = true">⚙</button></div></div>
+          <div class="controls"><div class="track" @click="seek" @pointerdown="startSeek" @pointermove="moveSeek" @pointerup="endSeek" @pointercancel="endSeek"><span :style="{ width: `${progress}%` }" /></div><div><button :aria-label="playing ? t('pause') : t('play')" @click="toggle">{{ playing ? 'Ⅱ' : '▶' }}</button><em>{{ time(currentTime) }} / {{ time(duration) }}</em><button class="skip" @click="skip">+ {{ settings.skipSeconds }} {{ t('secondsShort') }}</button><button @click="settings.danmakuEnabled = !settings.danmakuEnabled">{{ settings.danmakuEnabled ? t('danmakuShort') : t('danmakuOff') }}</button><button class="screen-button" :title="webFullscreen ? t('exitWebFullscreen') : t('webFullscreen')" @click="toggleWebFullscreen">{{ webFullscreen ? t('exitWebFullscreen') : t('webFullscreen') }}</button><button class="screen-button" :title="nativeFullscreen ? t('exitFullscreen') : t('fullscreen')" @click="toggleNativeFullscreen">{{ nativeFullscreen ? t('exitFullscreen') : t('fullscreen') }}</button><button :aria-label="t('playerSettings')" @click="showSettings = true">⚙</button></div></div>
         </div>
         <div class="now"><div><small>{{ t('nowPlaying') }}</small><h2>{{ title }}</h2></div><button @click="input?.click()">{{ t('changeVideo') }}</button></div>
         <input ref="input" hidden type="file" accept="video/*,.mkv,.avi,.mov,.m4v,.ts" @change="choose(($event.target as HTMLInputElement).files?.[0])" />
