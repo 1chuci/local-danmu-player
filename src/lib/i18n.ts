@@ -67,6 +67,12 @@ const messages: Record<Language, Record<string, string>> = {
     danmakuShort: '弹幕',
     danmakuOff: '关闭弹幕',
     secondsShort: '秒',
+    webFullscreen: '网页全屏',
+    exitWebFullscreen: '退出网页全屏',
+    fullscreen: '全屏',
+    exitFullscreen: '退出全屏',
+    fullscreenUnavailable: '当前浏览器不支持全屏',
+    shortcutHelp: '快捷键：空格播放/暂停，←/→ 快退/快进 5 秒，F 全屏，W 网页全屏，M 显示/隐藏弹幕，Esc 退出全屏。',
   },
   'en-US': {
     localDanmuPlayer: 'LOCAL DANMU PLAYER',
@@ -129,6 +135,12 @@ const messages: Record<Language, Record<string, string>> = {
     danmakuShort: 'DM',
     danmakuOff: 'DM off',
     secondsShort: 'sec',
+    webFullscreen: 'Web fullscreen',
+    exitWebFullscreen: 'Exit web fullscreen',
+    fullscreen: 'Fullscreen',
+    exitFullscreen: 'Exit fullscreen',
+    fullscreenUnavailable: 'Fullscreen is not supported by this browser',
+    shortcutHelp: 'Shortcuts: Space play/pause, ←/→ seek 5 seconds, F fullscreen, W web fullscreen, M toggle danmaku, Esc exit fullscreen.',
   },
 }
 
