@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: local-danmu-player
+    runtime: node
+    buildCommand: npm install && npm run build
+    startCommand: node server/index.mjs
+    envVars:
+      - key: DANDANPLAY_APP_ID
+        sync: false
+      - key: DANDANPLAY_APP_SECRET
+        sync: false
+      - key: PORT
+        value: 10000
