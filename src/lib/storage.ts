@@ -4,27 +4,40 @@ const SETTINGS_KEY = 'local-danmu-player:settings'
 const HISTORY_KEY = 'local-danmu-player:history'
 const DB_NAME = 'local-danmu-player'
 const COMMENTS_STORE = 'comments'
+const DANMAKU_SETTINGS_VERSION = 2
+type StoredSettings = Partial<PlayerSettings> & { danmakuSettingsVersion?: number }
 
 export const defaultSettings: PlayerSettings = {
   language: 'zh-CN',
   danmakuEnabled: true,
   opacity: 0.9,
-  fontSize: 24,
+  fontSize: 18,
   speed: 8,
+  danmakuArea: 25,
   skipSeconds: 80,
 }
 
 export function loadSettings(): PlayerSettings {
   try {
-    const stored = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}') as Partial<PlayerSettings>
-    return { ...defaultSettings, ...stored, language: stored.language === 'en-US' ? 'en-US' : 'zh-CN' }
+    const stored = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}') as StoredSettings
+    const isLegacyDanmakuSettings = stored.danmakuSettingsVersion !== DANMAKU_SETTINGS_VERSION
+    const area = [25, 50, 75, 100].includes(Number(stored.danmakuArea))
+      ? Number(stored.danmakuArea) as PlayerSettings['danmakuArea']
+      : defaultSettings.danmakuArea
+    return {
+      ...defaultSettings,
+      ...stored,
+      fontSize: isLegacyDanmakuSettings ? defaultSettings.fontSize : Number(stored.fontSize) || defaultSettings.fontSize,
+      danmakuArea: isLegacyDanmakuSettings ? defaultSettings.danmakuArea : area,
+      language: stored.language === 'en-US' ? 'en-US' : 'zh-CN',
+    }
   } catch {
     return { ...defaultSettings }
   }
 }
 
 export function saveSettings(settings: PlayerSettings) {
-  localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings))
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify({ ...settings, danmakuSettingsVersion: DANMAKU_SETTINGS_VERSION }))
 }
 
 export function getRecord(key: string): PlaybackRecord | undefined {
@@ -73,9 +86,16 @@ export async function getCachedComments(episodeId: number) {
 
 export async function cacheComments(episodeId: number, comments: DanmakuComment[]) {
   const database = await openDatabase()
+  const serializableComments = comments.map((comment) => ({
+    id: Number(comment.id),
+    time: Number(comment.time),
+    mode: Number(comment.mode),
+    color: String(comment.color),
+    text: String(comment.text),
+  }))
   return new Promise<void>((resolve, reject) => {
     const transaction = database.transaction(COMMENTS_STORE, 'readwrite')
-    transaction.objectStore(COMMENTS_STORE).put({ comments, cachedAt: Date.now() }, episodeId)
+    transaction.objectStore(COMMENTS_STORE).put({ comments: serializableComments, cachedAt: Date.now() }, episodeId)
     transaction.oncomplete = () => resolve()
     transaction.onerror = () => reject(transaction.error)
   })

@@ -20,17 +20,27 @@ export function createDandanplayClient({ appId, appSecret, fetchImpl = fetch }) 
 
     const timestamp = Math.floor(Date.now() / 1000).toString()
     const signature = createSignature(appId, timestamp, path, appSecret)
-    const response = await fetchImpl(`${API_ORIGIN}${path}${options.query ?? ''}`, {
-      method: options.method ?? 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-AppId': appId,
-        'X-Timestamp': timestamp,
-        'X-Signature': signature,
-      },
-      body: options.body ? JSON.stringify(options.body) : undefined,
-      redirect: 'follow',
-    })
+    let response
+    try {
+      response = await fetchImpl(`${API_ORIGIN}${path}${options.query ?? ''}`, {
+        method: options.method ?? 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-AppId': appId,
+          'X-Timestamp': timestamp,
+          'X-Signature': signature,
+        },
+        body: options.body ? JSON.stringify(options.body) : undefined,
+        redirect: 'follow',
+      })
+    } catch (cause) {
+      const networkCode = cause?.cause?.code || cause?.code || 'NETWORK_ERROR'
+      const error = new Error(`无法连接弹弹play API（${networkCode}），请检查网络、代理或防火墙设置`)
+      error.code = 'UPSTREAM_NETWORK_ERROR'
+      error.status = 502
+      error.cause = cause
+      throw error
+    }
 
     const text = await response.text()
     let data
@@ -42,6 +52,7 @@ export function createDandanplayClient({ appId, appSecret, fetchImpl = fetch }) 
 
     if (!response.ok) {
       const error = new Error(response.headers.get('x-error-message') || data.message || `上游请求失败 (${response.status})`)
+      error.code = 'UPSTREAM_HTTP_ERROR'
       error.status = response.status
       throw error
     }

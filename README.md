@@ -85,7 +85,7 @@ npm run build
 启动生产服务：
 
 ```powershell
-node server/index.mjs
+node --env-file=.env server/index.mjs
 ```
 
 默认服务地址：
@@ -154,6 +154,17 @@ DANDANPLAY_APP_SECRET
 ```
 
 环境变量修改后需要重新部署，使新的服务端配置生效。
+
+### 请求失败排查
+
+项目使用的弹弹play API 地址是 `https://api.dandanplay.net`，无需额外填写 API 地址。可以按下面顺序检查：
+
+1. 启动本地项目后访问 `http://localhost:5173/api/config`，确认返回 `{"dandanplayConfigured":true}`。
+2. 如果仍是演示模式，关闭旧的开发服务后重新运行 `npm run dev`，确保 Node 使用了 `.env` 文件。
+3. 如果返回 `无法连接弹弹play API`，请检查本机网络、代理软件和防火墙是否允许 Node.js 访问 `api.dandanplay.net`。
+4. 如果部署在 Vercel，请在项目的 Production、Preview 环境分别配置 `DANDANPLAY_APP_ID` 和 `DANDANPLAY_APP_SECRET`，然后重新部署。
+
+服务端只会返回连接错误或上游错误状态，不会在日志和响应中输出应用密钥。
 
 ## 隐私与数据处理
 

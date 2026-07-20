@@ -4,9 +4,9 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "concurrently -k -n web,api -c cyan,magenta \"vite --host 0.0.0.0\" \"node --watch server/index.mjs\"",
+    "dev": "concurrently -k -n web,api -c cyan,magenta \"vite --host 0.0.0.0\" \"node --env-file=.env --watch server/index.mjs\"",
     "build": "vue-tsc -b && vite build",
-    "start": "node server/index.mjs",
+    "start": "node --env-file=.env server/index.mjs",
     "preview": "vite preview",
     "test": "vitest run"
   },
