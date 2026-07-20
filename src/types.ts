@@ -39,6 +39,7 @@ export interface PlayerSettings {
   opacity: number
   fontSize: number
   speed: number
+  danmakuArea: 25 | 50 | 75 | 100
   skipSeconds: number
 }
 

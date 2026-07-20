@@ -58,7 +58,7 @@ export function createApp() {
 
   app.use((error, _request, response, _next) => {
     if (error.code === 'CREDENTIALS_NOT_CONFIGURED') return response.status(503).json({ code: error.code, message: error.message })
-    response.status(error.status || 502).json({ message: error.message || '服务暂时不可用' })
+    response.status(error.status || 502).json({ code: error.code || 'UPSTREAM_ERROR', message: error.message || '服务暂时不可用' })
   })
   return app
 }
