@@ -4,15 +4,15 @@ const SETTINGS_KEY = 'local-danmu-player:settings'
 const HISTORY_KEY = 'local-danmu-player:history'
 const DB_NAME = 'local-danmu-player'
 const COMMENTS_STORE = 'comments'
-const DANMAKU_SETTINGS_VERSION = 2
+const DANMAKU_SETTINGS_VERSION = 3
 type StoredSettings = Partial<PlayerSettings> & { danmakuSettingsVersion?: number }
 
 export const defaultSettings: PlayerSettings = {
   language: 'zh-CN',
   danmakuEnabled: true,
   opacity: 0.9,
-  fontSize: 18,
-  speed: 8,
+  fontSize: 20,
+  speed: 12,
   danmakuArea: 25,
   skipSeconds: 80,
 }
@@ -27,7 +27,8 @@ export function loadSettings(): PlayerSettings {
     return {
       ...defaultSettings,
       ...stored,
-      fontSize: isLegacyDanmakuSettings ? defaultSettings.fontSize : Number(stored.fontSize) || defaultSettings.fontSize,
+      fontSize: isLegacyDanmakuSettings && Number(stored.fontSize) === 18 ? defaultSettings.fontSize : Number(stored.fontSize) || defaultSettings.fontSize,
+      speed: isLegacyDanmakuSettings && Number(stored.speed) === 8 ? defaultSettings.speed : Number(stored.speed) || defaultSettings.speed,
       danmakuArea: isLegacyDanmakuSettings ? defaultSettings.danmakuArea : area,
       language: stored.language === 'en-US' ? 'en-US' : 'zh-CN',
     }
