@@ -31,7 +31,6 @@ const error = ref('')
 const matches = ref<MatchResult[]>([])
 const selected = ref<MatchResult>()
 const comments = ref<DanmakuComment[]>([])
-const videoQuality = ref('')
 const subtitles = ref<import('./lib/subtitles').SubtitleCue[]>([])
 const subtitleEnabled = ref(true)
 const subtitleLoading = ref(false)
@@ -108,7 +107,6 @@ async function choose(videoFile?: File) {
   hash.value = ''
   duration.value = 0
   currentTime.value = 0
-  videoQuality.value = ''
   playbackRate.value = 1
   matches.value = []
   selected.value = undefined
@@ -122,7 +120,6 @@ async function choose(videoFile?: File) {
 
 async function metadata() {
   duration.value = video.value?.duration || 0
-  videoQuality.value = video.value?.videoHeight ? `${video.value.videoHeight}P` : ''
   if (video.value) {
     video.value.playbackRate = playbackRate.value
     video.value.volume = volume.value
@@ -438,11 +435,10 @@ onBeforeUnmount(() => {
             <div class="control-row">
               <div class="control-left">
                 <button class="control-icon play-control" :aria-label="playing ? t('pause') : t('play')" :title="playing ? t('pause') : t('play')" @click="toggle">{{ playing ? 'Ⅱ' : '▶' }}</button>
-                <button class="control-icon skip-control" :aria-label="t('skipped', { count: settings.skipSeconds })" :title="t('skipped', { count: settings.skipSeconds })" @click="skip">≫</button>
                 <em class="time-display">{{ time(currentTime) }} / {{ time(duration) }}</em>
+                <button class="skip-control" :aria-label="t('skipped', { count: settings.skipSeconds })" :title="t('skipped', { count: settings.skipSeconds })" @click="skip">≫ {{ settings.skipSeconds }}s</button>
               </div>
               <div class="control-right">
-                <span v-if="videoQuality" class="quality-badge">{{ videoQuality }}</span>
                 <select class="rate-select" :value="playbackRate" :aria-label="t('playbackRate')" :title="t('playbackRate')" @change="changePlaybackRate"><option v-for="rate in playbackRates" :key="rate" :value="rate">{{ rate }}x</option></select>
                 <button class="control-icon volume-button" :aria-label="muted || volume === 0 ? t('unmute') : t('mute')" :title="muted || volume === 0 ? t('unmute') : t('mute')" @click="toggleMute">{{ muted || volume === 0 ? '🔇' : '🔊' }}</button>
                 <input class="volume-slider" type="range" min="0" max="1" step=".01" :value="muted ? 0 : volume" :aria-label="t('volume')" @input="changeVolume" />
