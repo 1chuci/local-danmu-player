@@ -4,3 +4,24 @@
 .frame.web-fullscreen,.frame:fullscreen{width:100vw;height:100vh;min-height:100vh;aspect-ratio:auto;border-radius:0}.frame.web-fullscreen{position:fixed;inset:0;z-index:50}.frame:fullscreen{background:#050607}.frame::backdrop{background:#050607}.screen-button{padding:6px 8px!important;border:1px solid #36404e!important;border-radius:6px;color:#bac3d0!important;font-size:10px!important}.shortcut-help{color:#697483!important;font-size:11px!important;line-height:1.7!important}
 .track{touch-action:none;user-select:none}
 .subtitle-overlay{position:absolute;right:8%;bottom:9%;left:8%;z-index:3;pointer-events:none;color:#fff;text-align:center;white-space:pre-line;font-size:clamp(16px,2.1vw,30px);font-weight:700;line-height:1.35;text-shadow:2px 2px 3px #000,-2px -2px 3px #000,0 0 6px #000}
+.controls{padding:0 18px 12px;background:linear-gradient(transparent,#030508f5)}
+.controls .track{position:relative;height:4px;margin:0 0 10px;border-radius:0;background:#68737b;cursor:pointer}
+.controls .track span{position:relative;height:4px;background:#14b9f0}
+.controls .track span::after{position:absolute;top:50%;right:-5px;width:10px;height:10px;border-radius:50%;background:#14b9f0;content:'';transform:translateY(-50%)}
+.control-row{display:flex;align-items:center;justify-content:space-between;gap:16px;min-height:32px}
+.control-left,.control-right{display:flex;align-items:center;gap:12px;min-width:0}
+.controls button.control-icon{display:inline-flex;align-items:center;justify-content:center;width:28px;height:30px;padding:0;color:#f5f7fb;background:transparent;font-size:17px;line-height:1}
+.controls button.control-icon:hover,.controls button.control-icon:focus-visible{color:#14b9f0}
+.controls button.play-control{width:32px;font-size:23px}
+.controls button.skip-control{font-size:25px}
+.controls button.text-control{width:30px;border:1px solid transparent;border-radius:4px;font-size:12px;font-weight:700}
+.controls button.text-control.active{color:#14b9f0;border-color:#14b9f0}
+.controls button.text-control:disabled{opacity:.5}
+.time-display{color:#fff;font:14px/1 monospace;font-style:normal;white-space:nowrap}
+.quality-badge{color:#fff;font-size:14px;white-space:nowrap}
+.controls .rate-select{min-width:46px;padding:0;border:0;color:#fff;background:transparent;font-size:14px}
+.controls .rate-select option{color:#111;background:#fff}
+.volume-button{font-size:18px!important}
+.volume-slider{width:84px;height:4px;accent-color:#14b9f0;cursor:pointer}
+.toolbar-button{font-size:21px!important}
+@media(max-width:760px){.controls{padding-right:10px;padding-left:10px}.control-left,.control-right{gap:5px}.control-right .quality-badge,.control-right .volume-slider{display:none}.controls button.control-icon{width:25px}.time-display,.quality-badge,.controls .rate-select{font-size:11px}.controls button.text-control{font-size:10px}}
