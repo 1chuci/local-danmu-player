@@ -13,6 +13,9 @@ export function createApp() {
   app.use((request, response, next) => {
     response.setHeader('X-Content-Type-Options', 'nosniff')
     response.setHeader('Referrer-Policy', 'no-referrer')
+    if (request.url === '/config' || request.url.startsWith('/dandanplay/')) {
+      request.url = `/api${request.url}`
+    }
     next()
   })
 
