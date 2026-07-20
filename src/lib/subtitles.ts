@@ -41,18 +41,19 @@ function parseSrt(source: string): SubtitleCue[] {
 async function getFFmpeg() {
   if (!ffmpegPromise) {
     ffmpegPromise = (async () => {
-      const bases = [
-        'https://unpkg.com/@ffmpeg/core@0.12.10/dist/umd',
-        'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/umd',
+      const sources = [
+        { coreURL: '/ffmpeg/ffmpeg-core.js', wasmURL: '/ffmpeg/ffmpeg-core.wasm' },
+        { coreURL: 'https://unpkg.com/@ffmpeg/core@0.12.10/dist/umd/ffmpeg-core.js', wasmURL: 'https://unpkg.com/@ffmpeg/core@0.12.10/dist/umd/ffmpeg-core.wasm' },
+        { coreURL: 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/umd/ffmpeg-core.js', wasmURL: 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/umd/ffmpeg-core.wasm' },
       ]
       let lastError: unknown
-      for (const baseURL of bases) {
+      for (const source of sources) {
         const ffmpeg = new FFmpeg()
         try {
+          const isLocal = source.coreURL.startsWith('/')
           await ffmpeg.load({
-            coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
-            wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
-            workerURL: await toBlobURL(`${baseURL}/ffmpeg-core.worker.js`, 'text/javascript'),
+            coreURL: isLocal ? source.coreURL : await toBlobURL(source.coreURL, 'text/javascript'),
+            wasmURL: isLocal ? source.wasmURL : await toBlobURL(source.wasmURL, 'application/wasm'),
           })
           return ffmpeg
         } catch (error) {
