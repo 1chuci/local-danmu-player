@@ -46,7 +46,7 @@ async function getFFmpeg() {
         { coreURL: 'https://unpkg.com/@ffmpeg/core@0.12.10/dist/umd/ffmpeg-core.js', wasmURL: 'https://unpkg.com/@ffmpeg/core@0.12.10/dist/umd/ffmpeg-core.wasm' },
         { coreURL: 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/umd/ffmpeg-core.js', wasmURL: 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/umd/ffmpeg-core.wasm' },
       ]
-      let lastError: unknown
+      const errors: string[] = []
       for (const source of sources) {
         const ffmpeg = new FFmpeg()
         try {
@@ -56,11 +56,13 @@ async function getFFmpeg() {
           })
           return ffmpeg
         } catch (error) {
-          lastError = error
+          const message = error instanceof Error ? `${error.name}: ${error.message}` : String(error)
+          errors.push(`${source.coreURL}: ${message}`)
+          console.error('[字幕解析] FFmpeg 加载失败', source.coreURL, error)
           ffmpeg.terminate()
         }
       }
-      throw lastError instanceof Error ? lastError : new Error('字幕解析组件加载失败')
+      throw new Error(`字幕解析组件加载失败：${errors.join('；')}`)
     })().catch((error) => {
       ffmpegPromise = undefined
       throw error
