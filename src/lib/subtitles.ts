@@ -18,6 +18,15 @@ function parseTime(value: string) {
   return Number(normalized)
 }
 
+function cleanSubtitleText(value: string) {
+  return value
+    .replace(/\\N|\\n/g, '\n')
+    .replace(/\\h/g, ' ')
+    .replace(/\{\\[^}]*\}/g, '')
+    .replace(/<\/?(?:font|b|i|u|s|strong|em|ruby|rt|br)(?:\s[^>]*)?>/gi, '')
+    .trim()
+}
+
 function parseSrt(source: string): SubtitleCue[] {
   return source
     .replace(/^\uFEFF/, '')
@@ -31,7 +40,7 @@ function parseSrt(source: string): SubtitleCue[] {
       if (!timing) return undefined
       const start = parseTime(timing[1])
       const end = parseTime(timing[2])
-      const text = lines.slice(timingIndex + 1).join('\n').trim()
+      const text = cleanSubtitleText(lines.slice(timingIndex + 1).join('\n'))
       if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start || !text) return undefined
       return { start, end, text }
     })
