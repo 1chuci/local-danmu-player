@@ -13,15 +13,14 @@
 .controls button.control-icon{display:inline-flex;align-items:center;justify-content:center;width:28px;height:30px;padding:0;color:#f5f7fb;background:transparent;font-size:17px;line-height:1}
 .controls button.control-icon:hover,.controls button.control-icon:focus-visible{color:#14b9f0}
 .controls button.play-control{width:32px;font-size:23px}
-.controls button.skip-control{font-size:25px}
+.controls button.skip-control{width:auto;height:30px;padding:0;border:0;color:#fff;background:transparent;font-size:14px;white-space:nowrap}
 .controls button.text-control{width:30px;border:1px solid transparent;border-radius:4px;font-size:12px;font-weight:700}
 .controls button.text-control.active{color:#14b9f0;border-color:#14b9f0}
 .controls button.text-control:disabled{opacity:.5}
 .time-display{color:#fff;font:14px/1 monospace;font-style:normal;white-space:nowrap}
-.quality-badge{color:#fff;font-size:14px;white-space:nowrap}
 .controls .rate-select{min-width:46px;padding:0;border:0;color:#fff;background:transparent;font-size:14px}
 .controls .rate-select option{color:#111;background:#fff}
 .volume-button{font-size:18px!important}
 .volume-slider{width:84px;height:4px;accent-color:#14b9f0;cursor:pointer}
 .toolbar-button{font-size:21px!important}
-@media(max-width:760px){.controls{padding-right:10px;padding-left:10px}.control-left,.control-right{gap:5px}.control-right .quality-badge,.control-right .volume-slider{display:none}.controls button.control-icon{width:25px}.time-display,.quality-badge,.controls .rate-select{font-size:11px}.controls button.text-control{font-size:10px}}
+@media(max-width:760px){.controls{padding-right:10px;padding-left:10px}.control-left,.control-right{gap:5px}.control-right .volume-slider{display:none}.controls button.control-icon{width:25px}.time-display,.controls .rate-select,.controls button.skip-control{font-size:11px}.controls button.text-control{font-size:10px}}
