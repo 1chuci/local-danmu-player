@@ -41,6 +41,7 @@ const showSettings = ref(false)
 const webFullscreen = ref(false)
 const nativeFullscreen = ref(false)
 const seeking = ref(false)
+const controlsVisible = ref(true)
 const showPlaybackRates = ref(false)
 const settings = reactive(loadSettings())
 const playbackRates = [0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3, 3.5, 4]
@@ -251,6 +252,15 @@ function selectPlaybackRate(rate: number) {
   showPlaybackRates.value = false
 }
 
+function revealControls() {
+  controlsVisible.value = true
+}
+
+function hideControls() {
+  controlsVisible.value = false
+  showPlaybackRates.value = false
+}
+
 function syncPlaybackRate() {
   playbackRate.value = video.value?.playbackRate || 1
 }
@@ -432,16 +442,16 @@ onBeforeUnmount(() => {
           <strong>▶</strong><h1>{{ t('openLocalVideo') }}</h1><p>{{ t('dropVideoHere') }}</p><small>{{ t('videoReadLocally') }}</small>
           <button class="primary" @click.stop="input?.click()">{{ t('chooseVideo') }}</button>
         </div>
-        <div v-else ref="frame" class="frame" :class="{ 'web-fullscreen': webFullscreen }">
+        <div v-else ref="frame" class="frame" :class="{ 'web-fullscreen': webFullscreen }" @mouseenter="revealControls" @mousemove="revealControls" @mouseleave="hideControls">
           <video ref="video" :src="url" @loadedmetadata="metadata" @timeupdate="update" @play="playing = true" @pause="playing = false" @ended="playing = false" @ratechange="syncPlaybackRate" @click="toggle" />
           <SubtitleOverlay :cues="subtitles" :current-time="currentTime" :enabled="subtitleEnabled" />
           <DanmakuOverlay :comments="comments" :current-time="currentTime" :playing="playing" :playback-rate="playbackRate" :enabled="settings.danmakuEnabled" :opacity="settings.opacity" :font-size="settings.fontSize" :speed="settings.speed" :area="settings.danmakuArea" />
           <button v-if="!playing && !currentTime" class="bigplay" @click="toggle">▶</button>
-          <div class="controls" @click="showPlaybackRates = false">
+          <div class="controls" :class="{ 'is-hidden': !controlsVisible }" @click="showPlaybackRates = false">
             <div class="track" @click="seek" @pointerdown="startSeek" @pointermove="moveSeek" @pointerup="endSeek" @pointercancel="endSeek"><span :style="{ width: `${progress}%` }" /></div>
             <div class="control-row">
               <div class="control-left">
-                <button class="control-icon play-control" :aria-label="playing ? t('pause') : t('play')" :title="playing ? t('pause') : t('play')" @click="toggle">{{ playing ? 'Ⅱ' : '▶' }}</button>
+                <button class="control-icon play-control" :aria-label="playing ? t('pause') : t('play')" :title="playing ? t('pause') : t('play')" @click="toggle"><span v-if="playing" class="pause-icon" aria-hidden="true"><i /><i /></span><span v-else class="play-icon" aria-hidden="true" /></button>
                 <em class="time-display">{{ time(currentTime) }} / {{ time(duration) }}</em>
                 <button class="skip-control" :aria-label="t('skipped', { count: settings.skipSeconds })" :title="t('skipped', { count: settings.skipSeconds })" @click="skip">≫ {{ settings.skipSeconds }}s</button>
               </div>
