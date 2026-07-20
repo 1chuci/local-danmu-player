@@ -1,8 +1,12 @@
 # Local Danmu Player
 
-一个轻量的浏览器本地视频播放器，为本地视频提供番剧匹配与弹幕显示功能。
+一个轻量的浏览器本地番剧播放器，为本地视频提供作品匹配、弹幕显示和播放控制功能。
 
-视频文件始终由浏览器本地读取和播放，不会上传视频内容。应用只将匹配所需的文件信息发送到后端，用于查找节目、剧集和对应弹幕。
+在线体验：<https://local-danmu-player.vercel.app>
+
+项目定位为“本地视频 + 在线弹幕”的网页播放器。视频文件始终由浏览器本地读取和播放，不会上传到服务器。
+
+应用只将匹配所需的文件信息发送到后端，用于查找节目、剧集和对应弹幕。
 
 ## 功能特性
 
@@ -133,9 +137,24 @@ GET  /api/dandanplay/comments/:episodeId
 
 弹幕数据默认在浏览器本地缓存 6 小时。缓存只用于改善加载速度，不会上传到第三方服务。
 
-## Vercel 部署
+## 在线体验与 Vercel 部署
 
-项目已包含 `vercel.json`、`api/[...path].mjs` 和 `public/favicon.svg`，可以直接导入 Vercel 部署。
+在线体验地址：
+
+```text
+https://local-danmu-player.vercel.app
+```
+
+项目已包含 `vercel.json`、Vercel Functions 入口和 `public/favicon.svg`，可以直接导入 Vercel 部署。
+
+当前 API 函数入口包括：
+
+```text
+api/config.mjs
+api/dandanplay/match.mjs
+api/dandanplay/search.mjs
+api/dandanplay/comments/[episodeId].mjs
+```
 
 在 Vercel 中导入 GitHub 仓库后使用以下构建配置：
 
