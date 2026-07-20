@@ -50,10 +50,9 @@ async function getFFmpeg() {
       for (const source of sources) {
         const ffmpeg = new FFmpeg()
         try {
-          const isLocal = source.coreURL.startsWith('/')
           await ffmpeg.load({
-            coreURL: isLocal ? source.coreURL : await toBlobURL(source.coreURL, 'text/javascript'),
-            wasmURL: isLocal ? source.wasmURL : await toBlobURL(source.wasmURL, 'application/wasm'),
+            coreURL: await toBlobURL(source.coreURL, 'text/javascript'),
+            wasmURL: await toBlobURL(source.wasmURL, 'application/wasm'),
           })
           return ffmpeg
         } catch (error) {
