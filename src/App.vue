@@ -41,8 +41,10 @@ const showSettings = ref(false)
 const webFullscreen = ref(false)
 const nativeFullscreen = ref(false)
 const seeking = ref(false)
+const showPlaybackRates = ref(false)
 const settings = reactive(loadSettings())
-const playbackRates = [0.5, 0.75, 1, 1.25, 1.5, 2]
+const playbackRates = [0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3, 3.5, 4]
+const playbackRateOptions = [...playbackRates].reverse()
 let activePointerId: number | undefined
 let timer: number | undefined
 let subtitleRequest = 0
@@ -244,6 +246,11 @@ function changePlaybackRate(event: Event) {
   setPlaybackRate(Number((event.target as HTMLSelectElement).value))
 }
 
+function selectPlaybackRate(rate: number) {
+  setPlaybackRate(rate)
+  showPlaybackRates.value = false
+}
+
 function syncPlaybackRate() {
   playbackRate.value = video.value?.playbackRate || 1
 }
@@ -430,7 +437,7 @@ onBeforeUnmount(() => {
           <SubtitleOverlay :cues="subtitles" :current-time="currentTime" :enabled="subtitleEnabled" />
           <DanmakuOverlay :comments="comments" :current-time="currentTime" :playing="playing" :playback-rate="playbackRate" :enabled="settings.danmakuEnabled" :opacity="settings.opacity" :font-size="settings.fontSize" :speed="settings.speed" :area="settings.danmakuArea" />
           <button v-if="!playing && !currentTime" class="bigplay" @click="toggle">▶</button>
-          <div class="controls">
+          <div class="controls" @click="showPlaybackRates = false">
             <div class="track" @click="seek" @pointerdown="startSeek" @pointermove="moveSeek" @pointerup="endSeek" @pointercancel="endSeek"><span :style="{ width: `${progress}%` }" /></div>
             <div class="control-row">
               <div class="control-left">
@@ -439,7 +446,12 @@ onBeforeUnmount(() => {
                 <button class="skip-control" :aria-label="t('skipped', { count: settings.skipSeconds })" :title="t('skipped', { count: settings.skipSeconds })" @click="skip">≫ {{ settings.skipSeconds }}s</button>
               </div>
               <div class="control-right">
-                <select class="rate-select" :value="playbackRate" :aria-label="t('playbackRate')" :title="t('playbackRate')" @change="changePlaybackRate"><option v-for="rate in playbackRates" :key="rate" :value="rate">{{ rate }}x</option></select>
+                <div class="playback-menu" @click.stop>
+                  <button class="playback-toggle" type="button" :aria-expanded="showPlaybackRates" :aria-label="t('playbackRate')" :title="t('playbackRate')" @click="showPlaybackRates = !showPlaybackRates">{{ playbackRate }}x</button>
+                  <div v-if="showPlaybackRates" class="playback-options" role="menu">
+                    <button v-for="rate in playbackRateOptions" :key="rate" type="button" role="menuitem" :class="{ active: playbackRate === rate }" @click="selectPlaybackRate(rate)">{{ rate }}x</button>
+                  </div>
+                </div>
                 <button class="control-icon volume-button" :aria-label="muted || volume === 0 ? t('unmute') : t('mute')" :title="muted || volume === 0 ? t('unmute') : t('mute')" @click="toggleMute">{{ muted || volume === 0 ? '🔇' : '🔊' }}</button>
                 <input class="volume-slider" type="range" min="0" max="1" step=".01" :value="muted ? 0 : volume" :aria-label="t('volume')" @input="changeVolume" />
                 <button class="control-icon toolbar-button" :aria-label="t('playerSettings')" :title="t('playerSettings')" @click="showSettings = true">⚙</button>
