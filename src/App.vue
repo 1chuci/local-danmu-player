@@ -21,6 +21,8 @@ const duration = ref(0)
 const currentTime = ref(0)
 const playing = ref(false)
 const playbackRate = ref(1)
+const volume = ref(1)
+const muted = ref(false)
 const loading = ref(false)
 const commentsLoading = ref(false)
 const configured = ref(false)
@@ -29,6 +31,7 @@ const error = ref('')
 const matches = ref<MatchResult[]>([])
 const selected = ref<MatchResult>()
 const comments = ref<DanmakuComment[]>([])
+const videoQuality = ref('')
 const subtitles = ref<import('./lib/subtitles').SubtitleCue[]>([])
 const subtitleEnabled = ref(true)
 const subtitleLoading = ref(false)
@@ -54,6 +57,7 @@ const title = computed(() => selected.value
 const progress = computed(() => duration.value ? currentTime.value / duration.value * 100 : 0)
 const time = (value: number) => {
   const seconds = Math.max(0, Math.floor(value || 0))
+  if (seconds < 3600) return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`
   return `${String(Math.floor(seconds / 3600)).padStart(2, '0')}:${String(Math.floor(seconds % 3600 / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`
 }
 const toast = (message: string) => {
@@ -104,6 +108,7 @@ async function choose(videoFile?: File) {
   hash.value = ''
   duration.value = 0
   currentTime.value = 0
+  videoQuality.value = ''
   playbackRate.value = 1
   matches.value = []
   selected.value = undefined
@@ -117,7 +122,12 @@ async function choose(videoFile?: File) {
 
 async function metadata() {
   duration.value = video.value?.duration || 0
-  if (video.value) video.value.playbackRate = playbackRate.value
+  videoQuality.value = video.value?.videoHeight ? `${video.value.videoHeight}P` : ''
+  if (video.value) {
+    video.value.playbackRate = playbackRate.value
+    video.value.volume = volume.value
+    video.value.muted = muted.value
+  }
   const record = fileKey.value ? getRecord(fileKey.value) : undefined
   if (record && record.currentTime > 5 && record.currentTime < duration.value - 5 && video.value) {
     video.value.currentTime = record.currentTime
@@ -239,6 +249,21 @@ function changePlaybackRate(event: Event) {
 
 function syncPlaybackRate() {
   playbackRate.value = video.value?.playbackRate || 1
+}
+
+function toggleMute() {
+  muted.value = !muted.value
+  if (video.value) video.value.muted = muted.value
+}
+
+function changeVolume(event: Event) {
+  const next = Math.max(0, Math.min(1, Number((event.target as HTMLInputElement).value)))
+  volume.value = next
+  muted.value = next === 0
+  if (video.value) {
+    video.value.volume = next
+    video.value.muted = muted.value
+  }
 }
 
 function seekAt(clientX: number, track: HTMLElement) {
@@ -408,7 +433,27 @@ onBeforeUnmount(() => {
           <SubtitleOverlay :cues="subtitles" :current-time="currentTime" :enabled="subtitleEnabled" />
           <DanmakuOverlay :comments="comments" :current-time="currentTime" :playing="playing" :playback-rate="playbackRate" :enabled="settings.danmakuEnabled" :opacity="settings.opacity" :font-size="settings.fontSize" :speed="settings.speed" :area="settings.danmakuArea" />
           <button v-if="!playing && !currentTime" class="bigplay" @click="toggle">▶</button>
-          <div class="controls"><div class="track" @click="seek" @pointerdown="startSeek" @pointermove="moveSeek" @pointerup="endSeek" @pointercancel="endSeek"><span :style="{ width: `${progress}%` }" /></div><div><button :aria-label="playing ? t('pause') : t('play')" @click="toggle">{{ playing ? 'Ⅱ' : '▶' }}</button><em>{{ time(currentTime) }} / {{ time(duration) }}</em><select class="rate-select" :value="playbackRate" :aria-label="t('playbackRate')" @change="changePlaybackRate"><option v-for="rate in playbackRates" :key="rate" :value="rate">{{ rate }}x</option></select><button class="skip" @click="skip">+ {{ settings.skipSeconds }} {{ t('secondsShort') }}</button><button :disabled="subtitleLoading" @click="subtitles.length ? subtitleEnabled = !subtitleEnabled : loadEmbeddedSubtitles()">{{ subtitleLoading ? t('subtitleLoading') : subtitles.length ? (subtitleEnabled ? t('subtitleOff') : t('subtitleOn')) : t('loadSubtitle') }}</button><button @click="settings.danmakuEnabled = !settings.danmakuEnabled">{{ settings.danmakuEnabled ? t('danmakuShort') : t('danmakuOff') }}</button><button class="screen-button" :title="webFullscreen ? t('exitWebFullscreen') : t('webFullscreen')" @click="toggleWebFullscreen">{{ webFullscreen ? t('exitWebFullscreen') : t('webFullscreen') }}</button><button class="screen-button" :title="nativeFullscreen ? t('exitFullscreen') : t('fullscreen')" @click="toggleNativeFullscreen">{{ nativeFullscreen ? t('exitFullscreen') : t('fullscreen') }}</button><button :aria-label="t('playerSettings')" @click="showSettings = true">⚙</button></div></div>
+          <div class="controls">
+            <div class="track" @click="seek" @pointerdown="startSeek" @pointermove="moveSeek" @pointerup="endSeek" @pointercancel="endSeek"><span :style="{ width: `${progress}%` }" /></div>
+            <div class="control-row">
+              <div class="control-left">
+                <button class="control-icon play-control" :aria-label="playing ? t('pause') : t('play')" :title="playing ? t('pause') : t('play')" @click="toggle">{{ playing ? 'Ⅱ' : '▶' }}</button>
+                <button class="control-icon skip-control" :aria-label="t('skipped', { count: settings.skipSeconds })" :title="t('skipped', { count: settings.skipSeconds })" @click="skip">≫</button>
+                <em class="time-display">{{ time(currentTime) }} / {{ time(duration) }}</em>
+              </div>
+              <div class="control-right">
+                <span v-if="videoQuality" class="quality-badge">{{ videoQuality }}</span>
+                <select class="rate-select" :value="playbackRate" :aria-label="t('playbackRate')" :title="t('playbackRate')" @change="changePlaybackRate"><option v-for="rate in playbackRates" :key="rate" :value="rate">{{ rate }}x</option></select>
+                <button class="control-icon volume-button" :aria-label="muted || volume === 0 ? t('unmute') : t('mute')" :title="muted || volume === 0 ? t('unmute') : t('mute')" @click="toggleMute">{{ muted || volume === 0 ? '🔇' : '🔊' }}</button>
+                <input class="volume-slider" type="range" min="0" max="1" step=".01" :value="muted ? 0 : volume" :aria-label="t('volume')" @input="changeVolume" />
+                <button class="control-icon toolbar-button" :aria-label="t('playerSettings')" :title="t('playerSettings')" @click="showSettings = true">⚙</button>
+                <button class="control-icon text-control" :class="{ active: subtitleEnabled }" :disabled="subtitleLoading" :title="subtitles.length ? (subtitleEnabled ? t('subtitleOff') : t('subtitleOn')) : t('loadSubtitle')" @click="subtitles.length ? subtitleEnabled = !subtitleEnabled : loadEmbeddedSubtitles()">CC</button>
+                <button class="control-icon text-control" :class="{ active: settings.danmakuEnabled }" :title="settings.danmakuEnabled ? t('danmakuShort') : t('danmakuOff')" @click="settings.danmakuEnabled = !settings.danmakuEnabled">弹</button>
+                <button class="control-icon toolbar-button" :title="webFullscreen ? t('exitWebFullscreen') : t('webFullscreen')" @click="toggleWebFullscreen">↗</button>
+                <button class="control-icon toolbar-button" :title="nativeFullscreen ? t('exitFullscreen') : t('fullscreen')" @click="toggleNativeFullscreen">⛶</button>
+              </div>
+            </div>
+          </div>
         </div>
         <div class="now"><div><small>{{ t('nowPlaying') }}</small><h2>{{ title }}</h2></div><button @click="input?.click()">{{ t('changeVideo') }}</button></div>
         <input ref="input" hidden type="file" accept="video/*,.mkv,.avi,.mov,.m4v,.ts" @change="choose(($event.target as HTMLInputElement).files?.[0])" />
