@@ -2,10 +2,12 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import SparkMD5 from 'spark-md5'
 import DanmakuOverlay from './components/DanmakuOverlay.vue'
+import SubtitleOverlay from './components/SubtitleOverlay.vue'
 import { getComments, getConfig, matchVideo, searchEpisodes } from './lib/api'
 import { demoComments, parseComments } from './lib/danmaku'
 import { languageOptions, translate } from './lib/i18n'
 import { cacheComments, getCachedComments, getRecord, loadSettings, saveRecord, saveSettings } from './lib/storage'
+import { extractEmbeddedSubtitles } from './lib/subtitles'
 import type { DanmakuComment, MatchResult, PlaybackRecord, SearchAnime } from './types'
 
 const video = ref<HTMLVideoElement>()
@@ -26,6 +28,9 @@ const error = ref('')
 const matches = ref<MatchResult[]>([])
 const selected = ref<MatchResult>()
 const comments = ref<DanmakuComment[]>([])
+const subtitles = ref<import('./lib/subtitles').SubtitleCue[]>([])
+const subtitleEnabled = ref(true)
+const subtitleLoading = ref(false)
 const keyword = ref('')
 const searchResults = ref<SearchAnime[]>([])
 const showSearch = ref(false)
@@ -36,6 +41,7 @@ const seeking = ref(false)
 const settings = reactive(loadSettings())
 let activePointerId: number | undefined
 let timer: number | undefined
+let subtitleRequest = 0
 
 const language = computed(() => settings.language)
 const t = (key: string, params: Record<string, string | number> = {}) => translate(language.value, key, params)
@@ -99,6 +105,9 @@ async function choose(videoFile?: File) {
   matches.value = []
   selected.value = undefined
   comments.value = demoMode.value ? [...demoComments] : []
+  subtitles.value = []
+  subtitleEnabled.value = true
+  subtitleRequest += 1
   await nextTick()
   video.value?.load()
 }
@@ -122,6 +131,29 @@ async function metadata() {
     } finally {
       loading.value = false
     }
+  }
+  if (file.value?.name.toLowerCase().endsWith('.mkv') && !subtitles.value.length && !subtitleLoading.value) {
+    void loadEmbeddedSubtitles()
+  }
+}
+
+async function loadEmbeddedSubtitles() {
+  if (!file.value || subtitleLoading.value) return
+  const requestId = ++subtitleRequest
+  subtitleLoading.value = true
+  try {
+    const cues = await extractEmbeddedSubtitles(file.value)
+    if (requestId !== subtitleRequest) return
+    subtitles.value = cues
+    subtitleEnabled.value = true
+    toast(t('subtitleLoaded', { count: cues.length }))
+  } catch (exception) {
+    if (requestId === subtitleRequest) {
+      subtitles.value = []
+      error.value = exception instanceof Error ? exception.message : t('subtitleFailed')
+    }
+  } finally {
+    if (requestId === subtitleRequest) subtitleLoading.value = false
   }
 }
 
@@ -355,9 +387,10 @@ onBeforeUnmount(() => {
         </div>
         <div v-else ref="frame" class="frame" :class="{ 'web-fullscreen': webFullscreen }">
           <video ref="video" :src="url" @loadedmetadata="metadata" @timeupdate="update" @play="playing = true" @pause="playing = false" @ended="playing = false" @click="toggle" />
+          <SubtitleOverlay :cues="subtitles" :current-time="currentTime" :enabled="subtitleEnabled" />
           <DanmakuOverlay :comments="comments" :current-time="currentTime" :playing="playing" :enabled="settings.danmakuEnabled" :opacity="settings.opacity" :font-size="settings.fontSize" :speed="settings.speed" :area="settings.danmakuArea" />
           <button v-if="!playing && !currentTime" class="bigplay" @click="toggle">▶</button>
-          <div class="controls"><div class="track" @click="seek" @pointerdown="startSeek" @pointermove="moveSeek" @pointerup="endSeek" @pointercancel="endSeek"><span :style="{ width: `${progress}%` }" /></div><div><button :aria-label="playing ? t('pause') : t('play')" @click="toggle">{{ playing ? 'Ⅱ' : '▶' }}</button><em>{{ time(currentTime) }} / {{ time(duration) }}</em><button class="skip" @click="skip">+ {{ settings.skipSeconds }} {{ t('secondsShort') }}</button><button @click="settings.danmakuEnabled = !settings.danmakuEnabled">{{ settings.danmakuEnabled ? t('danmakuShort') : t('danmakuOff') }}</button><button class="screen-button" :title="webFullscreen ? t('exitWebFullscreen') : t('webFullscreen')" @click="toggleWebFullscreen">{{ webFullscreen ? t('exitWebFullscreen') : t('webFullscreen') }}</button><button class="screen-button" :title="nativeFullscreen ? t('exitFullscreen') : t('fullscreen')" @click="toggleNativeFullscreen">{{ nativeFullscreen ? t('exitFullscreen') : t('fullscreen') }}</button><button :aria-label="t('playerSettings')" @click="showSettings = true">⚙</button></div></div>
+          <div class="controls"><div class="track" @click="seek" @pointerdown="startSeek" @pointermove="moveSeek" @pointerup="endSeek" @pointercancel="endSeek"><span :style="{ width: `${progress}%` }" /></div><div><button :aria-label="playing ? t('pause') : t('play')" @click="toggle">{{ playing ? 'Ⅱ' : '▶' }}</button><em>{{ time(currentTime) }} / {{ time(duration) }}</em><button class="skip" @click="skip">+ {{ settings.skipSeconds }} {{ t('secondsShort') }}</button><button :disabled="subtitleLoading" @click="subtitles.length ? subtitleEnabled = !subtitleEnabled : loadEmbeddedSubtitles()">{{ subtitleLoading ? t('subtitleLoading') : subtitles.length ? (subtitleEnabled ? t('subtitleOff') : t('subtitleOn')) : t('loadSubtitle') }}</button><button @click="settings.danmakuEnabled = !settings.danmakuEnabled">{{ settings.danmakuEnabled ? t('danmakuShort') : t('danmakuOff') }}</button><button class="screen-button" :title="webFullscreen ? t('exitWebFullscreen') : t('webFullscreen')" @click="toggleWebFullscreen">{{ webFullscreen ? t('exitWebFullscreen') : t('webFullscreen') }}</button><button class="screen-button" :title="nativeFullscreen ? t('exitFullscreen') : t('fullscreen')" @click="toggleNativeFullscreen">{{ nativeFullscreen ? t('exitFullscreen') : t('fullscreen') }}</button><button :aria-label="t('playerSettings')" @click="showSettings = true">⚙</button></div></div>
         </div>
         <div class="now"><div><small>{{ t('nowPlaying') }}</small><h2>{{ title }}</h2></div><button @click="input?.click()">{{ t('changeVideo') }}</button></div>
         <input ref="input" hidden type="file" accept="video/*,.mkv,.avi,.mov,.m4v,.ts" @change="choose(($event.target as HTMLInputElement).files?.[0])" />
