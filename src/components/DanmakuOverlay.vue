@@ -21,6 +21,7 @@ const props = defineProps<{
   opacity: number
   fontSize: number
   speed: number
+  playbackRate: number
   area: number
 }>()
 
@@ -34,7 +35,7 @@ const laneCursors: Record<LaneGroup, number> = { scroll: 0, fixed: 0, bottom: 0 
 const overlayStyle = computed(() => ({
   '--danmaku-opacity': String(props.opacity),
   '--danmaku-size': `${props.fontSize}px`,
-  '--danmaku-speed': `${props.speed}s`,
+  '--danmaku-speed': `${props.speed / Math.max(props.playbackRate, 0.1)}s`,
 }))
 
 const laneCount = computed(() => {
