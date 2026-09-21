@@ -1,7 +1,7 @@
 {
   "name": "local-danmu-player",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "scripts": {
     "dev": "concurrently -k -n web,api -c cyan,magenta \"vite --host 0.0.0.0\" \"node --env-file=.env --watch server/index.mjs\"",

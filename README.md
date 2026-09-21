@@ -4,6 +4,8 @@
 
 在线体验：<https://local-danmu-player.vercel.app>
 
+发行版与更新日志：<https://github.com/1chuci/local-danmu-player/releases>
+
 项目定位为“本地视频 + 在线弹幕”的网页播放器。视频文件始终由浏览器本地读取和播放，不会上传到服务器。
 
 应用只将匹配所需的文件信息发送到后端，用于查找节目、剧集和对应弹幕。
