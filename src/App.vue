@@ -49,6 +49,10 @@ const playbackRateOptions = [...playbackRates].reverse()
 let activePointerId: number | undefined
 let timer: number | undefined
 let subtitleRequest = 0
+let identifyToken = 0
+let commentsRequest = 0
+let lastProgressSave = 0
+let metaReady = false
 
 const language = computed(() => settings.language)
 const t = (key: string, params: Record<string, string | number> = {}) => translate(language.value, key, params)
@@ -103,8 +107,10 @@ async function choose(videoFile?: File) {
     return
   }
   error.value = ''
+  persistProgress()
   if (url.value) URL.revokeObjectURL(url.value)
   file.value = videoFile
+  metaReady = false
   url.value = URL.createObjectURL(videoFile)
   fileKey.value = `${videoFile.name}:${videoFile.size}:${videoFile.lastModified}`
   hash.value = ''
@@ -117,12 +123,14 @@ async function choose(videoFile?: File) {
   subtitles.value = []
   subtitleEnabled.value = true
   subtitleRequest += 1
+  identifyToken += 1
   await nextTick()
   video.value?.load()
 }
 
 async function metadata() {
   duration.value = video.value?.duration || 0
+  metaReady = true
   if (video.value) {
     video.value.playbackRate = playbackRate.value
     video.value.volume = volume.value
@@ -135,15 +143,19 @@ async function metadata() {
     toast(t('resumedAt', { time: time(record.currentTime) }))
   }
   if (file.value && !hash.value) {
+    const videoFile = file.value
+    const token = identifyToken
     loading.value = true
     try {
-      hash.value = await hashFile(file.value)
+      const fileHash = await hashFile(videoFile)
+      if (token !== identifyToken || file.value !== videoFile) return
+      hash.value = fileHash
       if (configured.value) await identify()
       else toast(t('configureForLive'))
     } catch (exception) {
-      error.value = exception instanceof Error ? exception.message : t('identificationFailed')
+      if (token === identifyToken) error.value = exception instanceof Error ? exception.message : t('identificationFailed')
     } finally {
-      loading.value = false
+      if (token === identifyToken) loading.value = false
     }
   }
   if (file.value?.name.toLowerCase().endsWith('.mkv') && !subtitles.value.length && !subtitleLoading.value) {
@@ -173,7 +185,11 @@ async function loadEmbeddedSubtitles() {
 
 async function identify() {
   if (!file.value || !hash.value) return
-  const result = await matchVideo({ fileName: file.value.name, fileHash: hash.value, fileSize: file.value.size, videoDuration: duration.value })
+  const videoFile = file.value
+  const fileHash = hash.value
+  const token = identifyToken
+  const result = await matchVideo({ fileName: videoFile.name, fileHash, fileSize: videoFile.size, videoDuration: duration.value })
+  if (token !== identifyToken || file.value !== videoFile) return
   matches.value = result.matches || []
   if (result.isMatched && matches.value.length === 1) {
     await select(matches.value[0])
@@ -193,22 +209,30 @@ async function select(match?: MatchResult) {
 }
 
 async function loadComments(episodeId: number) {
+  const requestId = ++commentsRequest
   commentsLoading.value = true
   try {
     const cached = await getCachedComments(episodeId).catch(() => undefined)
+    if (requestId !== commentsRequest) return
     if (cached && Date.now() - cached.cachedAt < 21600000) {
       comments.value = cached.comments
       toast(t('cachedComments', { count: comments.value.length }))
       return
     }
     const result = await getComments(episodeId)
+    if (requestId !== commentsRequest) return
     comments.value = parseComments(result.comments || [])
-    await cacheComments(episodeId, comments.value)
+    try {
+      await cacheComments(episodeId, comments.value)
+    } catch {
+      // 缓存写入失败不影响已成功加载的弹幕
+    }
     toast(t('loadedComments', { count: comments.value.length }))
   } catch (exception) {
+    if (requestId !== commentsRequest) return
     error.value = exception instanceof Error ? exception.message : t('danmakuLoadingFailed')
   } finally {
-    commentsLoading.value = false
+    if (requestId === commentsRequest) commentsLoading.value = false
   }
 }
 
@@ -324,11 +348,23 @@ function seekBy(seconds: number) {
   video.value.currentTime = Math.max(0, Math.min(duration.value, video.value.currentTime + seconds))
 }
 
+function persistProgress() {
+  if (!metaReady || !fileKey.value || !file.value) return
+  saveRecord({ key: fileKey.value, fileName: file.value.name, fileSize: file.value.size, currentTime: currentTime.value, duration: duration.value, episodeId: selected.value?.episodeId, animeTitle: selected.value?.animeTitle, episodeTitle: selected.value?.episodeTitle, updatedAt: Date.now() })
+}
+
 function update() {
   currentTime.value = video.value?.currentTime || 0
-  if (fileKey.value && file.value) {
-    saveRecord({ key: fileKey.value, fileName: file.value.name, fileSize: file.value.size, currentTime: currentTime.value, duration: duration.value, episodeId: selected.value?.episodeId, animeTitle: selected.value?.animeTitle, episodeTitle: selected.value?.episodeTitle, updatedAt: Date.now() })
+  const now = Date.now()
+  if (now - lastProgressSave > 5000) {
+    persistProgress()
+    lastProgressSave = now
   }
+}
+
+function paused() {
+  playing.value = false
+  persistProgress()
 }
 
 function drop(event: DragEvent) {
@@ -406,6 +442,7 @@ function save() {
 onMounted(async () => {
   applyLanguage()
   window.addEventListener('keydown', handleKeydown)
+  window.addEventListener('beforeunload', persistProgress)
   document.addEventListener('fullscreenchange', syncNativeFullscreen)
   try {
     configured.value = (await getConfig()).dandanplayConfigured
@@ -417,6 +454,7 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   if (url.value) URL.revokeObjectURL(url.value)
   window.removeEventListener('keydown', handleKeydown)
+  window.removeEventListener('beforeunload', persistProgress)
   document.removeEventListener('fullscreenchange', syncNativeFullscreen)
   document.body.style.overflow = ''
   clearTimeout(timer)
@@ -443,7 +481,7 @@ onBeforeUnmount(() => {
           <button class="primary" @click.stop="input?.click()">{{ t('chooseVideo') }}</button>
         </div>
         <div v-else ref="frame" class="frame" :class="{ 'web-fullscreen': webFullscreen }" @mouseenter="revealControls" @mousemove="revealControls" @mouseleave="hideControls">
-          <video ref="video" :src="url" @loadedmetadata="metadata" @timeupdate="update" @play="playing = true" @pause="playing = false" @ended="playing = false" @ratechange="syncPlaybackRate" @click="toggle" />
+          <video ref="video" :src="url" @loadedmetadata="metadata" @timeupdate="update" @play="playing = true" @pause="paused" @ended="paused" @ratechange="syncPlaybackRate" @click="toggle" />
           <SubtitleOverlay :cues="subtitles" :current-time="currentTime" :enabled="subtitleEnabled" />
           <DanmakuOverlay :comments="comments" :current-time="currentTime" :playing="playing" :playback-rate="playbackRate" :enabled="settings.danmakuEnabled" :opacity="settings.opacity" :font-size="settings.fontSize" :speed="settings.speed" :area="settings.danmakuArea" />
           <button v-if="!playing && !currentTime" class="bigplay" @click="toggle">▶</button>

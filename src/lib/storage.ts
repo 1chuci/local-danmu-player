@@ -63,17 +63,25 @@ export function saveRecord(record: PlaybackRecord) {
   localStorage.setItem(HISTORY_KEY, JSON.stringify(next))
 }
 
+let databasePromise: Promise<IDBDatabase> | undefined
+
 function openDatabase(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, 1)
-    request.onupgradeneeded = () => {
-      if (!request.result.objectStoreNames.contains(COMMENTS_STORE)) {
-        request.result.createObjectStore(COMMENTS_STORE)
+  if (!databasePromise) {
+    databasePromise = new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open(DB_NAME, 1)
+      request.onupgradeneeded = () => {
+        if (!request.result.objectStoreNames.contains(COMMENTS_STORE)) {
+          request.result.createObjectStore(COMMENTS_STORE)
+        }
       }
-    }
-    request.onsuccess = () => resolve(request.result)
-    request.onerror = () => reject(request.error)
-  })
+      request.onsuccess = () => resolve(request.result)
+      request.onerror = () => reject(request.error)
+    })
+    databasePromise.catch(() => {
+      databasePromise = undefined
+    })
+  }
+  return databasePromise
 }
 
 export async function getCachedComments(episodeId: number) {

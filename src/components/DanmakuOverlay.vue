@@ -29,6 +29,7 @@ const active = ref<ActiveComment[]>([])
 const overlay = ref<HTMLElement>()
 const overlayHeight = ref(500)
 let previousTime = 0
+let commentIndex = 0
 let sequence = 0
 const laneCursors: Record<LaneGroup, number> = { scroll: 0, fixed: 0, bottom: 0 }
 
@@ -77,11 +78,24 @@ function commentStyle(comment: ActiveComment) {
   return { color: comment.color, top: laneTop(comment.lane), animationPlayState }
 }
 
+function skipTo(time: number) {
+  const list = props.comments
+  let low = 0
+  let high = list.length
+  while (low < high) {
+    const mid = (low + high) >> 1
+    if (list[mid].time <= time) low = mid + 1
+    else high = mid
+  }
+  commentIndex = low
+}
+
 watch(
   () => props.comments,
   () => {
     active.value = []
     previousTime = props.currentTime
+    skipTo(props.currentTime)
   },
 )
 
@@ -90,18 +104,23 @@ watch(
   (currentTime) => {
     if (!props.enabled || !props.playing) {
       previousTime = currentTime
+      skipTo(currentTime)
       return
     }
     if (currentTime < previousTime || currentTime - previousTime > 2) {
       active.value = []
       previousTime = currentTime
+      skipTo(currentTime)
       return
     }
 
     active.value = active.value.filter((entry) => entry.expiresAt > currentTime)
-    const incoming = props.comments.filter(
-      (comment) => comment.time > previousTime && comment.time <= currentTime,
-    )
+    const incoming: DanmakuComment[] = []
+    const list = props.comments
+    while (commentIndex < list.length && list[commentIndex].time <= currentTime) {
+      incoming.push(list[commentIndex])
+      commentIndex += 1
+    }
     for (const comment of incoming.slice(0, 12)) {
       const group = laneGroup(comment.mode)
       const lane = nextLane(group)
