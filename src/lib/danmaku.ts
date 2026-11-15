@@ -1,7 +1,7 @@
 import type { DanmakuComment, RawComment } from '../types'
 
 export function integerToColor(value: number) {
-  const normalized = Math.max(0, Math.min(0xffffff, value || 0xffffff))
+  const normalized = Math.max(0, Math.min(0xffffff, Number.isFinite(value) ? value : 0xffffff))
   return `#${normalized.toString(16).padStart(6, '0')}`
 }
 

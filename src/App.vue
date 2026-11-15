@@ -1,14 +1,15 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
-import SparkMD5 from 'spark-md5'
 import DanmakuOverlay from './components/DanmakuOverlay.vue'
 import SubtitleOverlay from './components/SubtitleOverlay.vue'
-import { getComments, getConfig, matchVideo, searchEpisodes } from './lib/api'
-import { demoComments, parseComments } from './lib/danmaku'
+import { getConfig, matchVideo, searchEpisodes } from './lib/api'
+import { demoComments } from './lib/danmaku'
 import { languageOptions, translate } from './lib/i18n'
-import { cacheComments, getCachedComments, getRecord, loadSettings, saveRecord, saveSettings } from './lib/storage'
-import { extractEmbeddedSubtitles } from './lib/subtitles'
-import type { DanmakuComment, MatchResult, PlaybackRecord, SearchAnime } from './types'
+import { formatTime as time } from './lib/format'
+import { getRecord, loadSettings, saveRecord, saveSettings } from './lib/storage'
+import { useDanmaku } from './composables/useDanmaku'
+import { useSubtitles } from './composables/useSubtitles'
+import type { MatchResult, PlaybackRecord, SearchAnime } from './types'
 
 const video = ref<HTMLVideoElement>()
 const frame = ref<HTMLElement>()
@@ -24,16 +25,11 @@ const playbackRate = ref(1)
 const volume = ref(1)
 const muted = ref(false)
 const loading = ref(false)
-const commentsLoading = ref(false)
 const configured = ref(false)
 const notice = ref('')
 const error = ref('')
 const matches = ref<MatchResult[]>([])
 const selected = ref<MatchResult>()
-const comments = ref<DanmakuComment[]>([])
-const subtitles = ref<import('./lib/subtitles').SubtitleCue[]>([])
-const subtitleEnabled = ref(true)
-const subtitleLoading = ref(false)
 const keyword = ref('')
 const searchResults = ref<SearchAnime[]>([])
 const showSearch = ref(false)
@@ -48,9 +44,8 @@ const playbackRates = [0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3, 3.5, 4]
 const playbackRateOptions = [...playbackRates].reverse()
 let activePointerId: number | undefined
 let timer: number | undefined
-let subtitleRequest = 0
 let identifyToken = 0
-let commentsRequest = 0
+let searchRequest = 0
 let lastProgressSave = 0
 let metaReady = false
 
@@ -61,11 +56,6 @@ const title = computed(() => selected.value
   ? `${selected.value.animeTitle} - ${selected.value.episodeTitle || t('episode', { number: '?' })}`
   : file.value?.name || t('noVideoSelected'))
 const progress = computed(() => duration.value ? currentTime.value / duration.value * 100 : 0)
-const time = (value: number) => {
-  const seconds = Math.max(0, Math.floor(value || 0))
-  if (seconds < 3600) return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`
-  return `${String(Math.floor(seconds / 3600)).padStart(2, '0')}:${String(Math.floor(seconds % 3600 / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`
-}
 const toast = (message: string) => {
   notice.value = message
   clearTimeout(timer)
@@ -75,6 +65,10 @@ const applyLanguage = () => {
   document.documentElement.lang = language.value
   saveSettings(settings)
 }
+
+const setError = (message: string) => { error.value = message }
+const { comments, commentsLoading, loadComments } = useDanmaku({ t, toast, onError: setError })
+const { subtitles, subtitleEnabled, subtitleLoading, loadEmbeddedSubtitles, reset: resetSubtitles } = useSubtitles({ t, toast, onError: setError })
 
 function syncNativeFullscreen() {
   nativeFullscreen.value = document.fullscreenElement === frame.value
@@ -97,8 +91,24 @@ function toggleWebFullscreen() {
   document.body.style.overflow = webFullscreen.value ? 'hidden' : ''
 }
 
-async function hashFile(videoFile: File) {
-  return SparkMD5.ArrayBuffer.hash(await videoFile.slice(0, 16 * 1024 * 1024).arrayBuffer())
+function hashFile(videoFile: File) {
+  return new Promise<string>((resolve, reject) => {
+    const worker = new Worker(new URL('./lib/hashWorker.ts', import.meta.url), { type: 'module' })
+    worker.onmessage = (event: MessageEvent<string>) => {
+      worker.terminate()
+      resolve(event.data)
+    }
+    worker.onerror = (event) => {
+      worker.terminate()
+      reject(new Error(event.message || '哈希计算失败'))
+    }
+    videoFile.slice(0, 16 * 1024 * 1024).arrayBuffer()
+      .then((buffer) => worker.postMessage(buffer, [buffer]))
+      .catch((exception) => {
+        worker.terminate()
+        reject(exception)
+      })
+  })
 }
 
 async function choose(videoFile?: File) {
@@ -120,9 +130,7 @@ async function choose(videoFile?: File) {
   matches.value = []
   selected.value = undefined
   comments.value = demoMode.value ? [...demoComments] : []
-  subtitles.value = []
-  subtitleEnabled.value = true
-  subtitleRequest += 1
+  resetSubtitles()
   identifyToken += 1
   await nextTick()
   video.value?.load()
@@ -159,27 +167,7 @@ async function metadata() {
     }
   }
   if (file.value?.name.toLowerCase().endsWith('.mkv') && !subtitles.value.length && !subtitleLoading.value) {
-    void loadEmbeddedSubtitles()
-  }
-}
-
-async function loadEmbeddedSubtitles() {
-  if (!file.value || subtitleLoading.value) return
-  const requestId = ++subtitleRequest
-  subtitleLoading.value = true
-  try {
-    const cues = await extractEmbeddedSubtitles(file.value)
-    if (requestId !== subtitleRequest) return
-    subtitles.value = cues
-    subtitleEnabled.value = true
-    toast(t('subtitleLoaded', { count: cues.length }))
-  } catch (exception) {
-    if (requestId === subtitleRequest) {
-      subtitles.value = []
-      error.value = exception instanceof Error ? exception.message : t('subtitleFailed')
-    }
-  } finally {
-    if (requestId === subtitleRequest) subtitleLoading.value = false
+    void loadEmbeddedSubtitles(file.value)
   }
 }
 
@@ -208,46 +196,22 @@ async function select(match?: MatchResult) {
   }
 }
 
-async function loadComments(episodeId: number) {
-  const requestId = ++commentsRequest
-  commentsLoading.value = true
-  try {
-    const cached = await getCachedComments(episodeId).catch(() => undefined)
-    if (requestId !== commentsRequest) return
-    if (cached && Date.now() - cached.cachedAt < 21600000) {
-      comments.value = cached.comments
-      toast(t('cachedComments', { count: comments.value.length }))
-      return
-    }
-    const result = await getComments(episodeId)
-    if (requestId !== commentsRequest) return
-    comments.value = parseComments(result.comments || [])
-    try {
-      await cacheComments(episodeId, comments.value)
-    } catch {
-      // 缓存写入失败不影响已成功加载的弹幕
-    }
-    toast(t('loadedComments', { count: comments.value.length }))
-  } catch (exception) {
-    if (requestId !== commentsRequest) return
-    error.value = exception instanceof Error ? exception.message : t('danmakuLoadingFailed')
-  } finally {
-    if (requestId === commentsRequest) commentsLoading.value = false
-  }
-}
-
 async function search() {
   if (keyword.value.trim().length < 2) {
     error.value = t('searchMin')
     return
   }
+  const requestId = ++searchRequest
   loading.value = true
   try {
-    searchResults.value = (await searchEpisodes(keyword.value.trim())).animes || []
+    const result = await searchEpisodes(keyword.value.trim())
+    if (requestId !== searchRequest) return
+    searchResults.value = result.animes || []
   } catch (exception) {
+    if (requestId !== searchRequest) return
     error.value = exception instanceof Error ? exception.message : t('searchFailed')
   } finally {
-    loading.value = false
+    if (requestId === searchRequest) loading.value = false
   }
 }
 
@@ -292,6 +256,11 @@ function syncPlaybackRate() {
 function toggleMute() {
   muted.value = !muted.value
   if (video.value) video.value.muted = muted.value
+}
+
+function toggleDanmaku() {
+  settings.danmakuEnabled = !settings.danmakuEnabled
+  saveSettings(settings)
 }
 
 function changeVolume(event: Event) {
@@ -419,7 +388,7 @@ function handleKeydown(event: KeyboardEvent) {
       break
     case 'KeyM':
       event.preventDefault()
-      settings.danmakuEnabled = !settings.danmakuEnabled
+      toggleDanmaku()
       break
     case 'Home':
       event.preventDefault()
@@ -503,8 +472,8 @@ onBeforeUnmount(() => {
                 <button class="control-icon volume-button" :aria-label="muted || volume === 0 ? t('unmute') : t('mute')" :title="muted || volume === 0 ? t('unmute') : t('mute')" @click="toggleMute">{{ muted || volume === 0 ? '🔇' : '🔊' }}</button>
                 <input class="volume-slider" type="range" min="0" max="1" step=".01" :value="muted ? 0 : volume" :aria-label="t('volume')" @input="changeVolume" />
                 <button class="control-icon toolbar-button" :aria-label="t('playerSettings')" :title="t('playerSettings')" @click="showSettings = true">⚙</button>
-                <button class="control-icon text-control" :class="{ active: subtitleEnabled }" :disabled="subtitleLoading" :title="subtitles.length ? (subtitleEnabled ? t('subtitleOff') : t('subtitleOn')) : t('loadSubtitle')" @click="subtitles.length ? subtitleEnabled = !subtitleEnabled : loadEmbeddedSubtitles()">CC</button>
-                <button class="control-icon text-control" :class="{ active: settings.danmakuEnabled }" :title="settings.danmakuEnabled ? t('danmakuShort') : t('danmakuOff')" @click="settings.danmakuEnabled = !settings.danmakuEnabled">弹</button>
+                <button class="control-icon text-control" :class="{ active: subtitleEnabled }" :disabled="subtitleLoading" :title="subtitles.length ? (subtitleEnabled ? t('subtitleOff') : t('subtitleOn')) : t('loadSubtitle')" @click="subtitles.length ? subtitleEnabled = !subtitleEnabled : loadEmbeddedSubtitles(file)">CC</button>
+                <button class="control-icon text-control" :class="{ active: settings.danmakuEnabled }" :title="settings.danmakuEnabled ? t('danmakuShort') : t('danmakuOff')" @click="toggleDanmaku">弹</button>
                 <button class="control-icon toolbar-button" :title="webFullscreen ? t('exitWebFullscreen') : t('webFullscreen')" @click="toggleWebFullscreen">↗</button>
                 <button class="control-icon toolbar-button" :title="nativeFullscreen ? t('exitFullscreen') : t('fullscreen')" @click="toggleNativeFullscreen">⛶</button>
               </div>

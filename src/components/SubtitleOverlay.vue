@@ -8,7 +8,20 @@ const props = defineProps<{
   enabled: boolean
 }>()
 
-const currentCue = computed(() => props.cues.find((cue) => props.currentTime >= cue.start && props.currentTime < cue.end))
+const currentCue = computed(() => {
+  const cues = props.cues
+  if (!cues.length) return undefined
+  const time = props.currentTime
+  let low = 0
+  let high = cues.length
+  while (low < high) {
+    const mid = (low + high) >> 1
+    if (cues[mid].start <= time) low = mid + 1
+    else high = mid
+  }
+  const cue = cues[low - 1]
+  return cue && time >= cue.start && time < cue.end ? cue : undefined
+})
 </script>
 
 <template>

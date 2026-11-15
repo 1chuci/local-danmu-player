@@ -8,6 +8,11 @@ const root = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const dist = resolve(root, 'dist')
 if (existsSync(dist)) {
   app.use(express.static(dist, { maxAge: '1h' }))
+}
+
+app.use('/api', (_request, response) => response.status(404).json({ message: '接口不存在' }))
+
+if (existsSync(dist)) {
   app.get('*path', (_request, response) => response.sendFile(resolve(dist, 'index.html')))
 }
 

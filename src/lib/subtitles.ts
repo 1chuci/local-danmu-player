@@ -1,7 +1,7 @@
 import { FFmpeg } from '@ffmpeg/ffmpeg'
 import { fetchFile, toBlobURL } from '@ffmpeg/util'
 
-const MAX_EMBEDDED_SUBTITLE_SIZE = 2 * 1024 ** 3
+const MAX_EMBEDDED_SUBTITLE_SIZE = 512 * 1024 ** 2
 
 function formatGigabytes(bytes: number) {
   return `${(bytes / 1024 ** 3).toFixed(1)} GB`
@@ -33,7 +33,7 @@ function cleanSubtitleText(value: string) {
     .trim()
 }
 
-function parseSrt(source: string): SubtitleCue[] {
+export function parseSrt(source: string): SubtitleCue[] {
   return source
     .replace(/^\uFEFF/, '')
     .replace(/\r/g, '')
@@ -51,6 +51,7 @@ function parseSrt(source: string): SubtitleCue[] {
       return { start, end, text }
     })
     .filter((cue): cue is SubtitleCue => Boolean(cue))
+    .sort((left, right) => left.start - right.start)
 }
 
 async function getFFmpeg() {
@@ -88,7 +89,7 @@ async function getFFmpeg() {
 
 export async function extractEmbeddedSubtitles(file: File, onProgress?: (progress: number) => void) {
   if (file.size > MAX_EMBEDDED_SUBTITLE_SIZE) {
-    throw new Error(`视频文件过大（${formatGigabytes(file.size)}），内嵌字幕提取暂仅支持不超过 2 GB 的文件，请改用外挂字幕`)
+    throw new Error(`视频文件过大（${formatGigabytes(file.size)}），内嵌字幕提取暂仅支持不超过 512 MB 的文件，请改用外挂字幕`)
   }
   const ffmpeg = await getFFmpeg()
   const inputName = 'input-video.mkv'

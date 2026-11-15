@@ -32,10 +32,12 @@ export function createDandanplayClient({ appId, appSecret, fetchImpl = fetch }) 
         },
         body: options.body ? JSON.stringify(options.body) : undefined,
         redirect: 'follow',
+        signal: AbortSignal.timeout(15000),
       })
     } catch (cause) {
+      const isTimeout = cause?.name === 'TimeoutError' || cause?.name === 'AbortError'
       const networkCode = cause?.cause?.code || cause?.code || 'NETWORK_ERROR'
-      const error = new Error(`无法连接弹弹play API（${networkCode}），请检查网络、代理或防火墙设置`)
+      const error = new Error(isTimeout ? '弹弹play API 请求超时，请稍后重试' : `无法连接弹弹play API（${networkCode}），请检查网络、代理或防火墙设置`)
       error.code = 'UPSTREAM_NETWORK_ERROR'
       error.status = 502
       error.cause = cause
