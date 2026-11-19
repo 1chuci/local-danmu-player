@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { safeDecode, basename, normalizePath, joinPath, parsePropfind } from './webdav.mjs'
+import { createWebdavClient, safeDecode, basename, normalizePath, joinPath, parsePropfind } from './webdav.mjs'
 
 describe('parsePropfind', () => {
   it('parses collections and files with namespace prefixes', () => {
@@ -18,6 +18,24 @@ describe('parsePropfind', () => {
     const parsed = parsePropfind('<d:multistatus xmlns:d="DAV:"><d:response><d:href>/dav/%E7%95%AA%E5%89%A7/01.mkv</d:href><d:propstat><d:prop><d:getcontentlength>9</d:getcontentlength><d:resourcetype/></d:prop></d:propstat></d:response></d:multistatus>')
     expect(parsed[0].href).toBe('/dav/%E7%95%AA%E5%89%A7/01.mkv')
     expect(safeDecode('/dav/%E7%95%AA%E5%89%A7/01.mkv')).toBe('/dav/番剧/01.mkv')
+  })
+})
+
+describe('directory request', () => {
+  it('asks only for required properties while preserving auth, depth and parsed entries', async () => {
+    let captured
+    const client = createWebdavClient({
+      url: 'https://dav.example/dav/', username: 'u', password: 'p',
+      fetchImpl: async (url, init) => {
+        captured = { url, ...init }
+        return new Response('<D:multistatus xmlns:D="DAV:"><D:response><D:href>/dav/01.mkv</D:href><D:propstat><D:prop><D:getcontentlength>12</D:getcontentlength><D:resourcetype/></D:prop></D:propstat></D:response></D:multistatus>', { status: 207 })
+      },
+    })
+    expect(await client.list()).toEqual({ path: '/dav', entries: [{ name: '01.mkv', path: '/dav/01.mkv', size: 12, isDirectory: false }] })
+    expect(captured.url).toBe('https://dav.example/dav/')
+    expect(captured.headers).toMatchObject({ Depth: '1', Authorization: 'Basic dTpw', 'Content-Type': 'application/xml; charset=utf-8' })
+    expect(captured.body).toContain('<D:displayname/><D:getcontentlength/><D:resourcetype/>')
+    expect(captured.body).not.toContain('allprop')
   })
 })
 

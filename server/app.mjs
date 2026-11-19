@@ -93,7 +93,7 @@ export function createApp({
     }
   })
 
-  app.post('/api/webdav/authorize', (request, response) => {
+  app.post('/api/webdav/authorize', async (request, response, next) => {
     const { url, username = '', password = '' } = request.body ?? {}
     if (typeof url !== 'string' || !url.trim()) return response.status(400).json({ message: '缺少 WebDAV 地址' })
     try {
@@ -101,12 +101,18 @@ export function createApp({
     } catch {
       return response.status(400).json({ message: 'WebDAV 地址格式无效' })
     }
-    const token = issueWebdavToken({
-      url: url.trim(),
-      username: String(username ?? ''),
-      password: String(password ?? ''),
-    })
-    response.json({ token })
+    try {
+      const credentials = {
+        url: url.trim(),
+        username: String(username ?? ''),
+        password: String(password ?? ''),
+      }
+      const token = issueWebdavToken(credentials)
+      const listing = await createWebdavClient(credentials).list('')
+      response.json({ token, listing })
+    } catch (error) {
+      next(error)
+    }
   })
 
   app.get('/api/webdav/list', async (request, response, next) => {

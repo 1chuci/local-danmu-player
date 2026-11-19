@@ -89,7 +89,8 @@ export function createWebdavClient({ url, username = '', password = '', fetchImp
     const requestUrl = origin + (targetPath === '/' ? '/' : targetPath + '/')
     const response = await fetchImpl(requestUrl, {
       method: 'PROPFIND',
-      headers: { ...authHeaders, Depth: '1', Accept: 'application/xml, text/xml' },
+      headers: { ...authHeaders, Depth: '1', Accept: 'application/xml, text/xml', 'Content-Type': 'application/xml; charset=utf-8' },
+      body: '<?xml version="1.0" encoding="utf-8"?><D:propfind xmlns:D="DAV:"><D:prop><D:displayname/><D:getcontentlength/><D:resourcetype/></D:prop></D:propfind>',
       signal: AbortSignal.timeout(30000),
     })
     const xml = await response.text()

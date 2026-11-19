@@ -67,7 +67,10 @@ async function authorize() {
   })
   expect(response.status).toBe(200)
   expect(response.headers.get('cache-control')).toBe('no-store')
-  return (await response.json()).token
+  const result = await response.json()
+  expect(result.listing.path).toBe('/dav')
+  expect(result.listing.entries.map(entry => entry.name)).toEqual(['Episode01.mkv', 'Episode01.zh.ass'])
+  return result.token
 }
 
 describe('deployed WebDAV function entry', () => {
@@ -94,6 +97,16 @@ describe('deployed WebDAV function entry', () => {
     expect(cold.status).toBe(200)
     expect((await cold.json()).entries).toHaveLength(2)
     expect(upstreamRequests.at(-1)).toMatchObject({ method: 'PROPFIND', url: '/dav/', authorization: expectedAuth })
+  })
+
+  it('rejects invalid upstream credentials during connection and allows a later retry', async () => {
+    const response = await fetch(api + '/api/webdav/authorize', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: upstream + '/dav/', username: 'wrong', password: 'wrong' }),
+    })
+    expect(response.status).toBe(401)
+    expect(await response.json()).not.toHaveProperty('token')
+    await authorize()
   })
 
   it('preserves video Range headers and subtitle path/query data', async () => {

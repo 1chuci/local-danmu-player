@@ -1,6 +1,13 @@
 import type { MatchResult, RawComment, SearchAnime, SubtitleTrack, WebdavConfig, WebdavEntry, WebdavListing } from '../types'
 import { decodeSubtitleText } from './encoding'
 
+export class ApiError extends Error {
+  constructor(message: string, public status: number, public code?: string) {
+    super(message)
+    this.name = 'ApiError'
+  }
+}
+
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), 60000)
@@ -8,7 +15,7 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
     const response = await fetch(url, { ...options, signal: controller.signal })
     const data = await response.json().catch(() => ({}))
     if (!response.ok) {
-      throw new Error(data.message || `请求失败 (${response.status})`)
+      throw new ApiError(data.message || `请求失败 (${response.status})`, response.status, data.code)
     }
     return data as T
   } catch (error) {
@@ -73,7 +80,7 @@ export async function getBilibiliComments(bvid: string, page: number) {
 }
 
 export async function authorizeWebdav(config: WebdavConfig) {
-  return request<{ token: string }>('/api/webdav/authorize', {
+  return request<{ token: string; listing: WebdavListing }>('/api/webdav/authorize', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(config),
