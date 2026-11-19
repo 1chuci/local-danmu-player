@@ -2,6 +2,8 @@
 
 一个支持本地视频与 WebDAV 网盘播放的番剧播放器，提供弹幕匹配、字幕加载和连续播放。
 
+> **使用建议：目前推荐使用本地视频搭配外挂字幕（ASS、SSA、SRT、VTT）。WebDAV 功能仍存在一些问题，暂时搁置，暂不推荐使用。**
+
 在线体验：<https://local-danmu-player.vercel.app>
 
 发行版与更新日志：<https://github.com/1chuci/local-danmu-player/releases>
