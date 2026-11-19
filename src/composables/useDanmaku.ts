@@ -36,7 +36,7 @@ export function useDanmaku(deps: DanmakuDeps) {
       } catch {
         // 缓存写入失败不影响已成功加载的弹幕
       }
-      deps.toast(deps.t('loadedComments', { count: comments.value.length }))
+      if (requestId === commentsRequest) deps.toast(deps.t('loadedComments', { count: comments.value.length }))
     } catch (exception) {
       if (requestId !== commentsRequest) return
       deps.onError(exception instanceof Error ? exception.message : deps.t('danmakuLoadingFailed'))
@@ -45,5 +45,11 @@ export function useDanmaku(deps: DanmakuDeps) {
     }
   }
 
-  return { comments, commentsLoading, loadComments }
+  function resetComments(initial: DanmakuComment[] = []) {
+    commentsRequest += 1
+    comments.value = initial
+    commentsLoading.value = false
+  }
+
+  return { comments, commentsLoading, loadComments, resetComments }
 }

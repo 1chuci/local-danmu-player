@@ -1,7 +1,8 @@
-import type { DanmakuComment, PlaybackRecord, PlayerSettings } from '../types'
+import type { DanmakuComment, PlaybackRecord, PlayerSettings, WebdavConfig } from '../types'
 
 const SETTINGS_KEY = 'local-danmu-player:settings'
 const HISTORY_KEY = 'local-danmu-player:history'
+const WEBDAV_KEY = 'local-danmu-player:webdav'
 const DB_NAME = 'local-danmu-player'
 const COMMENTS_STORE = 'comments'
 const DANMAKU_SETTINGS_VERSION = 3
@@ -14,6 +15,7 @@ export const defaultSettings: PlayerSettings = {
   fontSize: 20,
   speed: 12,
   danmakuArea: 25,
+  autoNext: false,
   skipSeconds: 80,
 }
 
@@ -30,6 +32,7 @@ export function loadSettings(): PlayerSettings {
       fontSize: isLegacyDanmakuSettings && Number(stored.fontSize) === 18 ? defaultSettings.fontSize : Number(stored.fontSize) || defaultSettings.fontSize,
       speed: isLegacyDanmakuSettings && Number(stored.speed) === 8 ? defaultSettings.speed : Number(stored.speed) || defaultSettings.speed,
       danmakuArea: isLegacyDanmakuSettings ? defaultSettings.danmakuArea : area,
+      autoNext: typeof stored.autoNext === 'boolean' ? stored.autoNext : defaultSettings.autoNext,
       language: stored.language === 'en-US' ? 'en-US' : 'zh-CN',
     }
   } catch {
@@ -39,6 +42,30 @@ export function loadSettings(): PlayerSettings {
 
 export function saveSettings(settings: PlayerSettings) {
   localStorage.setItem(SETTINGS_KEY, JSON.stringify({ ...settings, danmakuSettingsVersion: DANMAKU_SETTINGS_VERSION }))
+}
+
+export function loadWebdavConfig(): WebdavConfig | null {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(WEBDAV_KEY) || 'null') as WebdavConfig | null
+    if (parsed && typeof parsed.url === 'string' && parsed.url.trim()) {
+      return {
+        url: parsed.url,
+        username: typeof parsed.username === 'string' ? parsed.username : '',
+        password: typeof parsed.password === 'string' ? parsed.password : '',
+      }
+    }
+    return null
+  } catch {
+    return null
+  }
+}
+
+export function saveWebdavConfig(config: WebdavConfig) {
+  localStorage.setItem(WEBDAV_KEY, JSON.stringify(config))
+}
+
+export function clearWebdavConfig() {
+  localStorage.removeItem(WEBDAV_KEY)
 }
 
 export function getRecord(key: string): PlaybackRecord | undefined {

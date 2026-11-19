@@ -1,5 +1,5 @@
 import { ref } from 'vue'
-import { extractEmbeddedSubtitles, type SubtitleCue } from '../lib/subtitles'
+import { extractEmbeddedSubtitles, parseSrt, parseSubtitleFile, type SubtitleCue } from '../lib/subtitles'
 
 interface SubtitleDeps {
   t: (key: string, params?: Record<string, string | number>) => string
@@ -40,5 +40,46 @@ export function useSubtitles(deps: SubtitleDeps) {
     }
   }
 
-  return { subtitles, subtitleEnabled, subtitleLoading, loadEmbeddedSubtitles, reset }
+  async function loadExternalSubtitleFile(file: File | undefined) {
+    if (!file || subtitleLoading.value) return
+    const requestId = ++subtitleRequest
+    subtitleLoading.value = true
+    try {
+      const cues = await parseSubtitleFile(file)
+      if (requestId !== subtitleRequest) return
+      subtitles.value = cues
+      subtitleEnabled.value = true
+      deps.toast(deps.t('subtitleLoaded', { count: cues.length }))
+    } catch (exception) {
+      if (requestId === subtitleRequest) {
+        subtitles.value = []
+        deps.onError(exception instanceof Error ? exception.message : deps.t('subtitleFailed'))
+      }
+    } finally {
+      if (requestId === subtitleRequest) subtitleLoading.value = false
+    }
+  }
+
+  async function loadSrtText(text: string) {
+    if (subtitleLoading.value) return
+    const requestId = ++subtitleRequest
+    subtitleLoading.value = true
+    try {
+      const cues = parseSrt(text)
+      if (!cues.length) throw new Error(deps.t('subtitleFailed'))
+      if (requestId !== subtitleRequest) return
+      subtitles.value = cues
+      subtitleEnabled.value = true
+      deps.toast(deps.t('subtitleLoaded', { count: cues.length }))
+    } catch (exception) {
+      if (requestId === subtitleRequest) {
+        subtitles.value = []
+        deps.onError(exception instanceof Error ? exception.message : deps.t('subtitleFailed'))
+      }
+    } finally {
+      if (requestId === subtitleRequest) subtitleLoading.value = false
+    }
+  }
+
+  return { subtitles, subtitleEnabled, subtitleLoading, loadEmbeddedSubtitles, loadExternalSubtitleFile, loadSrtText, reset }
 }

@@ -54,6 +54,53 @@ export function parseSrt(source: string): SubtitleCue[] {
     .sort((left, right) => left.start - right.start)
 }
 
+export function parseAss(source: string): SubtitleCue[] {
+  let section = ''
+  let eventFields: string[] = []
+  const cues: SubtitleCue[] = []
+  for (const rawLine of source.replace(/^\uFEFF/, '').replace(/\r/g, '').split('\n')) {
+    const line = rawLine.trim()
+    const sectionMatch = /^\[([^\]]+)\]$/.exec(line)
+    if (sectionMatch) {
+      section = sectionMatch[1].toLowerCase()
+      continue
+    }
+    if (section !== 'events') continue
+    if (/^format\s*:/i.test(line)) {
+      eventFields = line.slice(line.indexOf(':') + 1).split(',').map((field) => field.trim().toLowerCase())
+      continue
+    }
+    if (!/^dialogue\s*:/i.test(line) || !eventFields.length) continue
+    const raw = line.slice(line.indexOf(':') + 1).trimStart()
+    const textIndex = eventFields.indexOf('text')
+    if (textIndex < 0) continue
+    const values: string[] = []
+    let rest = raw
+    let valid = true
+    for (let index = 0; index < textIndex; index += 1) {
+      const comma = rest.indexOf(',')
+      if (comma < 0) { valid = false; break }
+      values.push(rest.slice(0, comma))
+      rest = rest.slice(comma + 1)
+    }
+    if (!valid) continue
+    const afterText: string[] = []
+    for (let index = eventFields.length - 1; index > textIndex; index -= 1) {
+      const comma = rest.lastIndexOf(',')
+      if (comma < 0) { valid = false; break }
+      afterText.unshift(rest.slice(comma + 1))
+      rest = rest.slice(0, comma)
+    }
+    if (!valid) continue
+    values.push(rest, ...afterText)
+    const start = parseTime(values[eventFields.indexOf('start')] || '')
+    const end = parseTime(values[eventFields.indexOf('end')] || '')
+    const text = cleanSubtitleText(values[textIndex] || '')
+    if (Number.isFinite(start) && Number.isFinite(end) && end > start && text) cues.push({ start, end, text })
+  }
+  return cues.sort((left, right) => left.start - right.start)
+}
+
 async function getFFmpeg() {
   if (!ffmpegPromise) {
     ffmpegPromise = (async () => {
@@ -87,27 +134,97 @@ async function getFFmpeg() {
   return ffmpegPromise
 }
 
+const TEXT_SUBTITLE_CODECS = new Set(['subrip', 'srt', 'ass', 'ssa', 'mov_text', 'webvtt', 'vtt', 'timed_text', 'text'])
+
+async function detectTextSubtitleStreams(ffmpeg: FFmpeg, inputName: string) {
+  const logs: string[] = []
+  const onLog = (event: { type: string; message: string }) => {
+    if (event.type === 'stderr') logs.push(event.message)
+  }
+  ffmpeg.on('log', onLog)
+  try {
+    await ffmpeg.exec(['-hide_banner', '-i', inputName, '-t', '0.1', '-f', 'null', '-'])
+  } catch {
+    // 无输出文件时 ffmpeg 可能返回非 0，但 stderr 已包含流信息
+  } finally {
+    ffmpeg.off('log', onLog)
+  }
+  const output = logs.join('\n')
+  const codecs = [...output.matchAll(/Stream #\d+:\d+(?:\([^)]*\))?: Subtitle: (\w+)/g)].map((match) => match[1].toLowerCase())
+  return codecs
+    .map((codec, index) => (TEXT_SUBTITLE_CODECS.has(codec) ? index : -1))
+    .filter((index) => index >= 0)
+}
+
 export async function extractEmbeddedSubtitles(file: File, onProgress?: (progress: number) => void) {
   if (file.size > MAX_EMBEDDED_SUBTITLE_SIZE) {
     throw new Error(`视频文件过大（${formatGigabytes(file.size)}），内嵌字幕提取暂仅支持不超过 512 MB 的文件，请改用外挂字幕`)
   }
   const ffmpeg = await getFFmpeg()
   const inputName = 'input-video.mkv'
-  const outputName = 'embedded-subtitles.srt'
   const progressHandler = ({ progress }: { progress: number }) => onProgress?.(Math.max(0, Math.min(1, progress)))
   ffmpeg.on('progress', progressHandler)
   try {
     await ffmpeg.writeFile(inputName, await fetchFile(file))
-    const exitCode = await ffmpeg.exec(['-loglevel', 'error', '-i', inputName, '-map', '0:s:0', '-c:s', 'srt', outputName])
-    if (exitCode !== 0) throw new Error('未找到可解析的文字字幕轨道')
-    const output = await ffmpeg.readFile(outputName, 'utf8')
-    const source = typeof output === 'string' ? output : new TextDecoder().decode(output)
-    const cues = parseSrt(source)
-    if (!cues.length) throw new Error('内嵌字幕轨道为空或格式不受支持')
-    return cues
+    const textStreams = await detectTextSubtitleStreams(ffmpeg, inputName)
+    if (!textStreams.length) throw new Error('未找到可解析的文字字幕轨道（视频可能没有内嵌字幕，或只有图形字幕）')
+    let lastError = ''
+    for (const streamIndex of textStreams) {
+      const outputName = `embedded-subtitles-${streamIndex}.srt`
+      try {
+        const exitCode = await ffmpeg.exec(['-loglevel', 'error', '-i', inputName, '-map', `0:s:${streamIndex}`, '-c:s', 'srt', outputName])
+        if (exitCode !== 0) {
+          lastError = '字幕轨道转换失败'
+          await ffmpeg.deleteFile(outputName).catch(() => undefined)
+          continue
+        }
+        const output = await ffmpeg.readFile(outputName, 'utf8')
+        const source = typeof output === 'string' ? output : new TextDecoder().decode(output)
+        const cues = parseSrt(source)
+        await ffmpeg.deleteFile(outputName).catch(() => undefined)
+        if (cues.length) return cues
+        lastError = '字幕轨道为空'
+      } catch (error) {
+        lastError = error instanceof Error ? error.message : String(error)
+        await ffmpeg.deleteFile(outputName).catch(() => undefined)
+      }
+    }
+    throw new Error(lastError || '未找到可解析的文字字幕轨道')
   } finally {
     ffmpeg.off('progress', progressHandler)
     await ffmpeg.deleteFile(inputName).catch(() => undefined)
-    await ffmpeg.deleteFile(outputName).catch(() => undefined)
   }
+}
+
+export async function parseSubtitleFile(file: File): Promise<SubtitleCue[]> {
+  const name = file.name.toLowerCase()
+  if (name.endsWith('.srt')) {
+    const cues = parseSrt(await file.text())
+    if (!cues.length) throw new Error('字幕文件为空或格式不受支持')
+    return cues
+  }
+  if (name.endsWith('.ass') || name.endsWith('.ssa')) {
+    const cues = parseAss(await file.text())
+    if (!cues.length) throw new Error('ASS 字幕文件中没有有效的 Dialogue 字幕')
+    return cues
+  }
+  if (name.endsWith('.vtt')) {
+    const ffmpeg = await getFFmpeg()
+    const inputName = 'external-subtitle.vtt'
+    const outputName = 'external-subtitle.srt'
+    try {
+      await ffmpeg.writeFile(inputName, await fetchFile(file))
+      const exitCode = await ffmpeg.exec(['-loglevel', 'error', '-i', inputName, '-map', '0:s:0', '-c:s', 'srt', outputName])
+      if (exitCode !== 0) throw new Error('字幕转换失败')
+      const output = await ffmpeg.readFile(outputName, 'utf8')
+      const source = typeof output === 'string' ? output : new TextDecoder().decode(output)
+      const cues = parseSrt(source)
+      if (!cues.length) throw new Error('字幕文件为空或格式不受支持')
+      return cues
+    } finally {
+      await ffmpeg.deleteFile(inputName).catch(() => undefined)
+      await ffmpeg.deleteFile(outputName).catch(() => undefined)
+    }
+  }
+  throw new Error('不支持的字幕格式，请使用 .srt / .ass / .ssa / .vtt')
 }

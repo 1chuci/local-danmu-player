@@ -40,6 +40,7 @@ export interface PlayerSettings {
   fontSize: number
   speed: number
   danmakuArea: 25 | 50 | 75 | 100
+  autoNext: boolean
   skipSeconds: number
 }
 
@@ -53,4 +54,29 @@ export interface PlaybackRecord {
   animeTitle?: string
   episodeTitle?: string
   updatedAt: number
+}
+
+export interface WebdavEntry {
+  name: string
+  path: string
+  size: number
+  isDirectory: boolean
+}
+
+export interface WebdavListing {
+  path: string
+  entries: WebdavEntry[]
+}
+
+export interface WebdavConfig {
+  url: string
+  username: string
+  password: string
+}
+
+export interface SubtitleTrack {
+  index: number
+  language: string
+  codec: string
+  name?: string
 }

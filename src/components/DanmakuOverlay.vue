@@ -1,164 +1,78 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import Danmaku from '@ironkinoko/danmaku'
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { DanmakuComment } from '../types'
-
-interface ActiveComment extends DanmakuComment {
-  key: string
-  lane: number
-  laneGroup: LaneGroup
-  expiresAt: number
-}
-
-type LaneGroup = 'scroll' | 'fixed' | 'bottom'
-
-const LANE_COUNT = 10
 
 const props = defineProps<{
   comments: DanmakuComment[]
-  currentTime: number
-  playing: boolean
+  media?: HTMLVideoElement
   enabled: boolean
   opacity: number
   fontSize: number
   speed: number
-  playbackRate: number
   area: number
 }>()
 
-const active = ref<ActiveComment[]>([])
-const overlay = ref<HTMLElement>()
-const overlayHeight = ref(500)
-let previousTime = 0
-let commentIndex = 0
-let sequence = 0
-const laneCursors: Record<LaneGroup, number> = { scroll: 0, fixed: 0, bottom: 0 }
-
-const overlayStyle = computed(() => ({
-  '--danmaku-opacity': String(props.opacity),
-  '--danmaku-size': `${props.fontSize}px`,
-  '--danmaku-speed': `${props.speed / Math.max(props.playbackRate, 0.1)}s`,
-}))
-
-const laneCount = computed(() => {
-  const availableHeight = overlayHeight.value * props.area / 100
-  const laneHeight = Math.max(props.fontSize * 1.35, 24)
-  return Math.max(1, Math.min(LANE_COUNT, Math.floor(availableHeight / laneHeight)))
-})
-
-function laneTop(lane: number) {
-  const step = Math.max(1, props.area - 6) / Math.max(1, laneCount.value - 1)
-  return `${Math.min(props.area - 3, 3 + lane * step)}%`
-}
-
-function laneGroup(mode: number): LaneGroup {
-  if (mode === 4) return 'bottom'
-  if (mode === 5) return 'fixed'
-  return 'scroll'
-}
-
-function nextLane(group: LaneGroup) {
-  const start = laneCursors[group]
-  for (let offset = 0; offset < laneCount.value; offset += 1) {
-    const lane = (start + offset) % laneCount.value
-    const occupied = active.value.some((entry) => entry.laneGroup === group && entry.lane === lane)
-    if (!occupied) {
-      laneCursors[group] = (lane + 1) % laneCount.value
-      return lane
-    }
-  }
-  return undefined
-}
-
-function commentStyle(comment: ActiveComment) {
-  const animationPlayState = props.playing && props.enabled ? 'running' : 'paused'
-  if (comment.laneGroup === 'bottom') {
-    const step = Math.max(1, props.area - 6) / Math.max(1, laneCount.value - 1)
-    return { color: comment.color, bottom: `${Math.min(props.area - 3, 3 + comment.lane * step)}%`, animationPlayState }
-  }
-  return { color: comment.color, top: laneTop(comment.lane), animationPlayState }
-}
-
-function skipTo(time: number) {
-  const list = props.comments
-  let low = 0
-  let high = list.length
-  while (low < high) {
-    const mid = (low + high) >> 1
-    if (list[mid].time <= time) low = mid + 1
-    else high = mid
-  }
-  commentIndex = low
-}
-
-watch(
-  () => props.comments,
-  () => {
-    active.value = []
-    previousTime = props.currentTime
-    skipTo(props.currentTime)
-  },
-)
-
-watch(
-  () => props.currentTime,
-  (currentTime) => {
-    if (!props.enabled || !props.playing) {
-      previousTime = currentTime
-      skipTo(currentTime)
-      return
-    }
-    if (currentTime < previousTime || currentTime - previousTime > 2) {
-      active.value = []
-      previousTime = currentTime
-      skipTo(currentTime)
-      return
-    }
-
-    active.value = active.value.filter((entry) => entry.expiresAt > currentTime)
-    const incoming: DanmakuComment[] = []
-    const list = props.comments
-    while (commentIndex < list.length && list[commentIndex].time <= currentTime) {
-      incoming.push(list[commentIndex])
-      commentIndex += 1
-    }
-    for (const comment of incoming.slice(0, 12)) {
-      const group = laneGroup(comment.mode)
-      const lane = nextLane(group)
-      if (lane === undefined) continue
-      const item = {
-        ...comment,
-        key: `${comment.id}-${sequence++}`,
-        lane,
-        laneGroup: group,
-        expiresAt: currentTime + Math.max(props.speed, 2) + 0.5,
-      }
-      active.value.push(item)
-    }
-    previousTime = currentTime
-  },
-)
-
+const container = ref<HTMLElement>()
+let engine: Danmaku | undefined
 let resizeObserver: ResizeObserver | undefined
+let mounted = false
+
+function engineComments() {
+  return props.comments.map((comment) => ({
+    text: comment.text,
+    time: comment.time,
+    mode: 'rtl' as const,
+    style: { color: comment.color, fontSize: String(props.fontSize) + 'px', fontWeight: '700', textShadow: '1px 1px 2px #000, -1px -1px 2px #000' },
+  }))
+}
+
+function syncEngine() {
+  if (!engine || !container.value) return
+  engine.opacity = props.opacity
+  const area = Math.max(0.25, Math.min(1, props.area / 100))
+  if (engine.scrollAreaPercent !== area) engine.scrollAreaPercent = area
+  // The engine already scales transitions with media.playbackRate.
+  engine.resize()
+  engine.speed = Math.max(1, container.value.clientWidth / Math.max(2, props.speed))
+  if (props.enabled) engine.show()
+  else engine.hide()
+}
+
+function bindMedia() {
+  engine?.destroy()
+  engine = undefined
+  if (!mounted || !container.value || !props.media) return
+  engine = new Danmaku({
+    container: container.value,
+    media: props.media,
+    comments: engineComments(),
+    opacity: props.opacity,
+    overlap: false,
+    scrollAreaPercent: Math.max(0.25, Math.min(1, props.area / 100)),
+  })
+  syncEngine()
+}
+
+watch(() => props.media, bindMedia, { flush: 'post' })
+watch(() => [props.comments, props.fontSize], () => engine?.reload(engineComments()), { deep: true })
+watch(() => [props.enabled, props.opacity, props.speed, props.area], syncEngine, { flush: 'post' })
 
 onMounted(() => {
-  if (!overlay.value) return
-  const updateHeight = () => { overlayHeight.value = overlay.value?.clientHeight || 500 }
-  resizeObserver = new ResizeObserver(updateHeight)
-  resizeObserver.observe(overlay.value)
-  updateHeight()
+  mounted = true
+  bindMedia()
+  resizeObserver = new ResizeObserver(syncEngine)
+  if (container.value) resizeObserver.observe(container.value)
 })
 
-onBeforeUnmount(() => resizeObserver?.disconnect())
+onBeforeUnmount(() => {
+  mounted = false
+  resizeObserver?.disconnect()
+  engine?.destroy()
+  engine = undefined
+})
 </script>
 
 <template>
-  <div ref="overlay" v-show="enabled" class="danmaku-overlay" :style="overlayStyle" aria-hidden="true">
-    <span
-      v-for="comment in active"
-      :key="comment.key"
-      class="danmaku-item"
-      :class="{ fixed: comment.mode === 4 || comment.mode === 5, bottom: comment.mode === 4 }"
-      :style="commentStyle(comment)"
-    >{{ comment.text }}</span>
-  </div>
+  <div ref="container" v-show="enabled" class="danmaku-overlay" aria-hidden="true" />
 </template>

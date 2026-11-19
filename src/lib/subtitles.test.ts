@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseSrt } from './subtitles'
+import { parseAss, parseSrt } from './subtitles'
 
 describe('parseSrt', () => {
   it('parses blocks and strips tags', () => {
@@ -41,5 +41,35 @@ describe('parseSrt', () => {
       '没有时间戳',
     ].join('\n')
     expect(parseSrt(source)).toHaveLength(1)
+  })
+})
+
+
+describe('parseAss', () => {
+  it('parses timed dialogue, strips ASS override tags, and keeps commas in text', () => {
+    const source = [
+      '[Script Info]',
+      'Title: Fixture',
+      '[Events]',
+      'Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text',
+      'Dialogue: 0,0:00:02.50,0:00:04.25,Default,,0,0,0,,{\\an8}字幕, 第一行\\N第二行',
+      'Dialogue: 0,0:00:01.00,0:00:02.00,Default,,0,0,0,,{\\i1}Earlier line{\\i0}',
+      '[Fonts]',
+      'Dialogue: ignored',
+    ].join('\n')
+    expect(parseAss(source)).toEqual([
+      { start: 1, end: 2, text: 'Earlier line' },
+      { start: 2.5, end: 4.25, text: '字幕, 第一行\n第二行' },
+    ])
+  })
+
+  it('follows custom Events field order and rejects invalid timings', () => {
+    const source = [
+      '[Events]',
+      'Format: Text, End, Start, Layer',
+      'Dialogue: Hello, world,0:00:03.00,0:00:01.25,0',
+      'Dialogue: broken,0:00:00.00,0:00:02.00,0',
+    ].join('\n')
+    expect(parseAss(source)).toEqual([{ start: 1.25, end: 3, text: 'Hello, world' }])
   })
 })
