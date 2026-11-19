@@ -1,4 +1,4 @@
-import { ref } from 'vue'
+import { onScopeDispose, ref } from 'vue'
 import { extractEmbeddedSubtitles, parseSrt, parseSubtitleFile, type SubtitleCue } from '../lib/subtitles'
 
 interface SubtitleDeps {
@@ -12,20 +12,38 @@ export function useSubtitles(deps: SubtitleDeps) {
   const subtitleEnabled = ref(true)
   const subtitleLoading = ref(false)
   let subtitleRequest = 0
+  let embeddedController: AbortController | undefined
+
+  function subtitleError(exception: unknown) {
+    const keys: Record<string, string> = {
+      EmbeddedSubtitleSizeError: 'localSubtitleTooLarge',
+      LocalSubtitleReadLimitError: 'localSubtitleReadLimit',
+      NoTextSubtitleError: 'noTextSubtitles',
+      TimeoutError: 'localSubtitleTimeout',
+    }
+    if (!(exception instanceof Error)) return deps.t('subtitleFailed')
+    return keys[exception.name] ? deps.t(keys[exception.name]) : exception.message
+  }
 
   function reset() {
     subtitleRequest += 1
+    embeddedController?.abort()
+    embeddedController = undefined
     subtitleLoading.value = false
     subtitles.value = []
     subtitleEnabled.value = true
   }
 
+  onScopeDispose(reset)
+
   async function loadEmbeddedSubtitles(file: File | undefined) {
     if (!file || subtitleLoading.value) return
     const requestId = ++subtitleRequest
     subtitleLoading.value = true
+    const controller = new AbortController()
+    embeddedController = controller
     try {
-      const cues = await extractEmbeddedSubtitles(file)
+      const cues = await extractEmbeddedSubtitles(file, undefined, controller.signal)
       if (requestId !== subtitleRequest) return
       subtitles.value = cues
       subtitleEnabled.value = true
@@ -33,9 +51,10 @@ export function useSubtitles(deps: SubtitleDeps) {
     } catch (exception) {
       if (requestId === subtitleRequest) {
         subtitles.value = []
-        deps.onError(exception instanceof Error ? exception.message : deps.t('subtitleFailed'))
+        deps.onError(subtitleError(exception))
       }
     } finally {
+      if (embeddedController === controller) embeddedController = undefined
       if (requestId === subtitleRequest) subtitleLoading.value = false
     }
   }
@@ -53,7 +72,7 @@ export function useSubtitles(deps: SubtitleDeps) {
     } catch (exception) {
       if (requestId === subtitleRequest) {
         subtitles.value = []
-        deps.onError(exception instanceof Error ? exception.message : deps.t('subtitleFailed'))
+        deps.onError(subtitleError(exception))
       }
     } finally {
       if (requestId === subtitleRequest) subtitleLoading.value = false
@@ -74,7 +93,7 @@ export function useSubtitles(deps: SubtitleDeps) {
     } catch (exception) {
       if (requestId === subtitleRequest) {
         subtitles.value = []
-        deps.onError(exception instanceof Error ? exception.message : deps.t('subtitleFailed'))
+        deps.onError(subtitleError(exception))
       }
     } finally {
       if (requestId === subtitleRequest) subtitleLoading.value = false

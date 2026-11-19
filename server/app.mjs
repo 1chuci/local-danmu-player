@@ -1,4 +1,3 @@
-import crypto from 'node:crypto'
 import express from 'express'
 import { Readable } from 'node:stream'
 import { createDandanplayClient } from './dandanplay.mjs'
@@ -7,30 +6,17 @@ import { createWebdavClient } from './webdav.mjs'
 import { probeSubtitles, extractSubtitleSrt } from './ffmpeg.mjs'
 import { listMkvSubtitleTracks, extractMkvSubtitleSrt } from './mkv-subtitles.mjs'
 import { filterSiblingSubtitleEntries } from './sibling-subtitles.mjs'
+import { createWebdavSessions } from './webdav-sessions.mjs'
 
-const WEBDAV_TOKEN_TTL = 24 * 60 * 60 * 1000
-const webdavTokens = new Map()
-
-function issueWebdavToken(credentials) {
-  const token = crypto.randomUUID()
-  webdavTokens.set(token, { ...credentials, expiresAt: Date.now() + WEBDAV_TOKEN_TTL })
-  return token
-}
-
-function getWebdavCredentials(token) {
-  const key = String(token ?? '')
-  const entry = webdavTokens.get(key)
-  if (!entry) return null
-  if (entry.expiresAt < Date.now()) {
-    webdavTokens.delete(key)
-    return null
-  }
-  return entry
-}
-
-
-export function createApp() {
+export function createApp({
+  webdavSessionSecret = process.env.WEBDAV_SESSION_SECRET || process.env.DANDANPLAY_APP_SECRET,
+  requirePersistentWebdavSecret = process.env.VERCEL === '1',
+} = {}) {
   const app = express()
+  const { issue: issueWebdavToken, read: getWebdavCredentials } = createWebdavSessions({
+    secret: webdavSessionSecret,
+    requirePersistentSecret: requirePersistentWebdavSecret,
+  })
   const client = createDandanplayClient({
     appId: process.env.DANDANPLAY_APP_ID,
     appSecret: process.env.DANDANPLAY_APP_SECRET,
@@ -42,6 +28,7 @@ export function createApp() {
   app.use((request, response, next) => {
     response.setHeader('X-Content-Type-Options', 'nosniff')
     response.setHeader('Referrer-Policy', 'no-referrer')
+    if (request.path.startsWith('/api/webdav/')) response.setHeader('Cache-Control', 'no-store')
     if (request.url === '/config' || request.url.startsWith('/dandanplay/')) {
       request.url = `/api${request.url}`
     }

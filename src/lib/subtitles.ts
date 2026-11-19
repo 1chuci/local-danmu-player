@@ -1,5 +1,7 @@
 import { FFmpeg } from '@ffmpeg/ffmpeg'
 import { fetchFile, toBlobURL } from '@ffmpeg/util'
+import { readLocalMkvSubtitles } from './localMkvSubtitles'
+import { decodeSubtitleText } from './encoding'
 
 const MAX_EMBEDDED_SUBTITLE_SIZE = 512 * 1024 ** 2
 
@@ -156,9 +158,23 @@ async function detectTextSubtitleStreams(ffmpeg: FFmpeg, inputName: string) {
     .filter((index) => index >= 0)
 }
 
-export async function extractEmbeddedSubtitles(file: File, onProgress?: (progress: number) => void) {
+export async function extractEmbeddedSubtitles(file: File, onProgress?: (progress: number) => void, signal?: AbortSignal) {
+  signal?.throwIfAborted()
+  if (/\.(mkv|webm)$/i.test(file.name)) {
+    const tracks = await readLocalMkvSubtitles(file, signal)
+    for (const track of tracks) {
+      const source = decodeSubtitleText(track.subtitle)
+      const cues = track.type === 'ass' || track.type === 'ssa' ? parseAss(source) : parseSrt(source)
+      if (cues.length) { onProgress?.(1); return cues }
+    }
+    const error = new Error('未找到可解析的文字字幕轨道（视频可能没有内嵌字幕，或只有图形字幕）')
+    error.name = 'NoTextSubtitleError'
+    throw error
+  }
   if (file.size > MAX_EMBEDDED_SUBTITLE_SIZE) {
-    throw new Error(`视频文件过大（${formatGigabytes(file.size)}），内嵌字幕提取暂仅支持不超过 512 MB 的文件，请改用外挂字幕`)
+    const error = new Error(`本地非 MKV/WebM 视频（${formatGigabytes(file.size)}）的整文件字幕提取上限为 512 MB，请改用外挂字幕`)
+    error.name = 'EmbeddedSubtitleSizeError'
+    throw error
   }
   const ffmpeg = await getFFmpeg()
   const inputName = 'input-video.mkv'
