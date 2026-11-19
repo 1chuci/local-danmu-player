@@ -56,6 +56,9 @@ export function parsePropfind(xml) {
   return results
 }
 
+// Keep Chinese names and episode numbers in the same order on Windows and Vercel.
+const nameCollator = new Intl.Collator('zh-CN', { numeric: true })
+
 export function createWebdavClient({ url, username = '', password = '', fetchImpl = fetch }) {
   const configured = Boolean(url)
   const origin = configured ? new URL(url).origin : ''
@@ -103,7 +106,14 @@ export function createWebdavClient({ url, username = '', password = '', fetchImp
       if (!name) continue
       entries.push({ name, path: entryPath, size: item.size, isDirectory: item.isCollection })
     }
-    entries.sort((left, right) => (left.isDirectory === right.isDirectory ? left.name.localeCompare(right.name) : left.isDirectory ? -1 : 1))
+    entries.sort((left, right) => {
+      if (left.isDirectory !== right.isDirectory) return left.isDirectory ? -1 : 1
+      const byName = nameCollator.compare(left.name, right.name)
+      if (byName) return byName
+      // Numeric equivalents such as 2/02 must not depend on upstream response order.
+      if (left.name !== right.name) return left.name < right.name ? -1 : 1
+      return left.path < right.path ? -1 : left.path > right.path ? 1 : 0
+    })
     return { path: targetPath, entries }
   }
 

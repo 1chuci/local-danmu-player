@@ -39,6 +39,24 @@ describe('directory request', () => {
   })
 })
 
+describe('directory ordering', () => {
+  it('uses stable Chinese name collation with natural episode numbers and folders first', async () => {
+    const rows = [
+      ['Season10.mkv', false],
+      ['第10话', true],
+      ['Season2.mkv', false],
+      ['第2话', true],
+    ].map(([name, directory]) => '<D:response><D:href>/dav/' + name + (directory ? '/' : '') + '</D:href><D:propstat><D:prop><D:displayname>' + name + '</D:displayname><D:getcontentlength>1</D:getcontentlength><D:resourcetype>' + (directory ? '<D:collection/>' : '') + '</D:resourcetype></D:prop></D:propstat></D:response>').join('')
+    const client = createWebdavClient({
+      url: 'https://dav.example/dav/',
+      fetchImpl: async () => new Response('<D:multistatus xmlns:D="DAV:">' + rows + '</D:multistatus>', { status: 207 }),
+    })
+    const result = await client.list()
+    expect(result.entries.map(entry => entry.name)).toEqual(['第2话', '第10话', 'Season2.mkv', 'Season10.mkv'])
+    expect(result.entries.map(entry => entry.isDirectory)).toEqual([true, true, false, false])
+  })
+})
+
 describe('path helpers', () => {
   it('normalizePath', () => {
     expect(normalizePath('')).toBe('/')
