@@ -1,5 +1,31 @@
 node_modules/
 dist/
+
+# Local credentials; keep only the empty public template.
 .env
-.DS_Store
+.env.*
+!.env.example
+*.pem
+*.key
+*.pfx
+*.p12
+
+# Browser test profiles can contain cookies, passwords and localStorage.
+/.browser-validation-profile*/
+/test-media/
+/scripts/_*.mjs
+/browser-check-*.png
+/ui-preview-*.png
+/ui-player-*.png
+/ui-webdav-*.png
+/ui-subtitles-*.png
+
+# Local diagnostics and editor state.
+*.har
+*.heapsnapshot
+*.cpuprofile
 *.log
+/.privacy-audit/
+.idea/
+.vscode/
+.DS_Store
